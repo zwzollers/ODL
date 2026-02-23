@@ -58,7 +58,7 @@ Constriants are a way of solifiying measurments of a design without having to ca
 
 
 # Syntax
-
+```
 // syntax for a simple 50mm cube
 let box = {L,L,L,L}.loop(origin.top);
 {box.0}.h();
@@ -76,5 +76,6 @@ let cube = {box}.extrude(box_extrude, +);
 {box.0}.d(50_mm);
 
 let circle = {A}.loop(cube.)
+```
 
 
