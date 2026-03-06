@@ -59,23 +59,134 @@ Constriants are a way of solifiying measurments of a design without having to ca
 
 # Syntax
 ```
-// syntax for a simple 50mm cube
-let box = {L,L,L,L}.loop(origin.top);
-{box.0}.h();
-{box.2}.h();
-{box.1}.v();
-{box.2}.v();
-{box.*}.e();
-{box.0,box.1}.d(90_deg);
-{box.0,^origin}.i();
+Capsule (diameter: dist, length: dist) {}
+  let pill = loop({a:line, b:arc, c:line, d:arc}, origin.top);
+  h({pill[a]}, {pill[c]});
+  t(
+    {pill[a], pill[b]}, 
+    {pill[a], pill[d]}, 
+    {pill[c], pill[a]}, 
+    {pill[c], pill[d]}
+  );
+  let x = dist({pill[b][0], pill[b][1]});
+  eq({x,pill[a]});
+  
+  let cline = pl({a:line});
+  i({cline[0],pill[b][0.5]}, {cline[1],pill[d][0.5]})
+  
+  let sections = pill.split(cline);
+  
+  let dpill = revolve({sections[0]}, cline);
+  
+  dim({pill[b][0.5], pill[d][0.5]}, length);
+  dim({x}, diameter);
+}
+```
 
-let cube = {box}.extrude(box_extrude, +);
+```
+Gear (face: plane, center_point: point, pitch_diameter: dist, teeth: number, modulus: number) {
 
-{box_extrude.dist,test.0}.e();
+  let m = (pitch_diameter/teeth)/PI;\
+  let tooth_height = m * 2;
+  let half_tooth = pl({base: arc, inv: equation, top:line}, face);
+  
+  let side_line = pl({l:line}, face);
+  i({side_line[l][0], center_point});
+  i({side_line[l][1], half_tooth[base][0]});
+  n({side_line[l], half_tooth[base]});
+  
+  let center_line = pl({cl:line}, face);
+  v({center_line[cl]});
+  i({center_line[cl][0], center_point});
+  i({center_line[cl][1], half_tooth[top][1]);
+  dim({center_line}, (pitch_diameter/2)+tooth_height);
+  
+  let r = pitch_diameter;
+  parametric({inv}, r*cos(t+a)+t*sin(t+a), r*sin(t+a)-t*cos(t+a));
+  
+  h({half_tooth[top]});
+  
+  t({half_tooth[base], half_tooth[inv]});
+  
+}
+```
 
-{box.0}.d(50_mm);
+```
+let sq = loop([
+  a: line,
+  b: 1ine,
+  c: line,
+  d: line
+]);
+eq([sq[a],origin]);
+eq([sq[a],sq[b]]);
+h([sq[a]]);
+h([sq[c]]);
+v[sq[b]];
+v[sq[d]];
+east([sq[a]]);
+north[sq[b]];
+dim([sq[a]], 5.0);
 
-let circle = {A}.loop(cube.)
+
+4 points P0, P1, P2, P3
+P0.x = 0
+P0.y = 0
+(P1.x-P0.x)^2 + (P1.y-P0.y)^2 - (P2.x-P1.x)^2 - (P2.y-P1.y)^2 = 0
+P0.y - P1.y = 0
+P2.y - P3.y = 0
+P1.x - P2.x = 0
+P0.x - P3.x = 0
+P1.x - P0.x > 0
+P2.y - P1.y > 0
+sqrt((P1.x-P0.x)^2 + (P1.y-P0.y)^2) - 5 = 0
+
+P0 = (0,0)
+P1 = (5,0)
+P2 = (5,5)
+P3 = (0,5)
 ```
 
 
+## Keywords
+
+### ```Let```
+
+let is used to name things
+
+```
+let name = thing;
+
+let x = 5;
+let loop = loop([
+  a: line,
+  b: arc,
+  c: line,
+  d: arc
+]);
+```
+
+### ```tuples```
+
+{} denotes a tuple
+
+### implicit naming
+
+```
+let x: num; // explicit naming
+
+[x: num]; // implicit naming
+```
+
+
+## primitive types
+
+```
+number -> num
+distance -> dist
+angle -> angle
+area -> area
+boolean -> bool
+
+named type -> name: type
+```

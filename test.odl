@@ -1,0 +1,21 @@
+
+let pill = loop({a:line, b:arc, c:line, d:arc}, origin.top);
+h({pill[a]}, {pill[c]});
+t(
+    {pill[a], pill[b]}, 
+    {pill[a], pill[d]}, 
+    {pill[c], pill[a]}, 
+    {pill[c], pill[d]}
+);
+let x = dist({pill[b][0], pill[b][1]});
+eq({x,pill[a]});
+
+let cline = pl({a:line});
+i({cline[0],pill[b][0.5]}, {cline[1],pill[d][0.5]})
+
+let sections = pill.split(cline);
+
+let dpill = revolve({sections[0]}, cline);
+
+dim({pill[b][0.5], pill[d][0.5]}, 40);
+dim({x}, 10);
