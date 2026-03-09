@@ -9,7 +9,7 @@ use render::run;
 
 fn main() {
 
-    run();
+    println!("{:?}", run());
 
     let mut solver = ConstraintSolver::new();
 
