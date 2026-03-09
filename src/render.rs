@@ -109,6 +109,7 @@ impl CameraUniform {
 
 struct CameraController {
     speed: f32,
+    tspeed: f32,
     mouse_position: PhysicalPosition<f64>,
     mouse_offset: (f64, f64),
     is_rotating: bool,
@@ -120,9 +121,10 @@ struct CameraController {
 }
 
 impl CameraController {
-    fn new(speed: f32) -> Self {
+    fn new(speed: f32, tspeed: f32) -> Self {
         Self {
             speed,
+            tspeed,
             mouse_position: PhysicalPosition { x: 0.0, y: 0.0 },
             mouse_offset: (0.0, 0.0),
             is_rotating: false,
@@ -201,9 +203,21 @@ impl CameraController {
         if self.is_rotating {
             camera.eye = camera.target - (forward + (right * self.speed * self.mouse_offset.0 as f32)).normalize() * forward_mag;
             let forward = camera.target - camera.eye;
-            camera.eye = camera.target - (forward + (camera.up * self.speed * self.mouse_offset.1 as f32)).normalize() * forward_mag;
+            camera.eye = camera.target - (forward - (camera.up * self.speed * self.mouse_offset.1 as f32)).normalize() * forward_mag;
 
             self.mouse_offset = (0.0, 0.0);
+        }
+
+        if self.is_translating {
+            camera.target -= right * self.tspeed * self.mouse_offset.0 as f32 * forward_mag;
+            camera.target += camera.up * self.tspeed * self.mouse_offset.1 as f32 * forward_mag;
+
+            camera.eye -= right * self.tspeed * self.mouse_offset.0 as f32 * forward_mag;
+            camera.eye += camera.up * self.tspeed * self.mouse_offset.1 as f32 * forward_mag;
+
+            self.mouse_offset = (0.0, 0.0);
+
+            println!("{:?}, {:?}", camera.target, (right * self.speed * self.mouse_offset.0 as f32).normalize());
         }
 
         // if self.is_right_pressed {
@@ -371,7 +385,7 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
-        let camera_controller = CameraController::new(0.02);
+        let camera_controller = CameraController::new(0.02, 0.002);
 
         let render_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
