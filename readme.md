@@ -118,7 +118,7 @@ let sq = loop([
   c: line,
   d: line
 ]);
-eq([sq[a],origin]);
+eq([sq[a][0],origin]);
 eq([sq[a],sq[b]]);
 h([sq[a]]);
 h([sq[c]]);

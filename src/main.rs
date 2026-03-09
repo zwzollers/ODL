@@ -6,8 +6,57 @@ use constraints::*;
 mod render;
 use render::run;
 
+mod render2;
+use render2::{ render_shader_widget, init_shader };
+
+
+#[derive(Default)]
+struct MyApp {
+    angle: f32,
+}
+
+impl eframe::App for MyApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Hello Ferris");
+            egui::ScrollArea::both()
+                .auto_shrink([false; 2])
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        ui.label("The triangle is being painted using ");
+                        ui.hyperlink_to("WGPU", "https://wgpu.rs");
+                        ui.label(" (Portable Rust graphics API awesomeness)");
+                    });
+                    ui.label("It's not a very impressive demo, but it shows you can embed 3D inside of egui.");
+                    render_shader_widget(&mut self.angle, ui);
+                    
+                    ui.label("Drag to rotate!");
+                });
+        });
+    }
+}
+
+impl MyApp {
+    pub fn new<'a>(cc: &'a eframe::CreationContext<'a>) -> Option<Self> {
+        init_shader(cc)?;
+        Some(Self { angle: 0.0 })
+    }
+}
 
 fn main() {
+    
+    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+    let options = eframe::NativeOptions {
+            renderer: eframe::Renderer::Wgpu,
+            ..Default::default()
+        };
+        eframe::run_native(
+            "moirë",
+            options,
+            Box::new(|cc| Ok(Box::new(MyApp::new(cc).unwrap()))),
+        );
+    
 
     println!("{:?}", run());
 

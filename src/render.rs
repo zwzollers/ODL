@@ -2,7 +2,7 @@ use std::{iter, sync::Arc};
 
 use wgpu::util::DeviceExt;
 use winit::{
-    application::ApplicationHandler, dpi::PhysicalPosition, event::*, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::Window
+    application::ApplicationHandler, dpi::PhysicalPosition, event::*, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowButtons}
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -110,52 +110,30 @@ impl CameraUniform {
 struct CameraController {
     speed: f32,
     tspeed: f32,
+    sspeed: f32,
     mouse_position: PhysicalPosition<f64>,
     mouse_offset: (f64, f64),
+    mouse_scroll_delta: f32,
     is_rotating: bool,
     is_translating: bool,
-    is_forward_pressed: bool,
-    is_backward_pressed: bool,
-    is_left_pressed: bool,
-    is_right_pressed: bool,
 }
 
 impl CameraController {
-    fn new(speed: f32, tspeed: f32) -> Self {
+    fn new(speed: f32, tspeed: f32, sspeed: f32) -> Self {
         Self {
             speed,
             tspeed,
+            sspeed,
             mouse_position: PhysicalPosition { x: 0.0, y: 0.0 },
             mouse_offset: (0.0, 0.0),
+            mouse_scroll_delta: 0.0,
             is_rotating: false,
             is_translating: false,
-            is_forward_pressed: false,
-            is_backward_pressed: false,
-            is_left_pressed: false,
-            is_right_pressed: false,
         }
     }
 
     fn handle_key(&mut self, code: KeyCode, is_pressed: bool) -> bool {
-        match code {
-            KeyCode::KeyW | KeyCode::ArrowUp => {
-                self.is_forward_pressed = is_pressed;
-                true
-            }
-            KeyCode::KeyA | KeyCode::ArrowLeft => {
-                self.is_left_pressed = is_pressed;
-                true
-            }
-            KeyCode::KeyS | KeyCode::ArrowDown => {
-                self.is_backward_pressed = is_pressed;
-                true
-            }
-            KeyCode::KeyD | KeyCode::ArrowRight => {
-                self.is_right_pressed = is_pressed;
-                true
-            }
-            _ => false,
-        }
+        true
     }
 
     fn handle_mouse_click(&mut self, code: MouseButton, is_pressed: bool) {
@@ -171,6 +149,12 @@ impl CameraController {
             _ => ()
         }
     }
+    
+    fn handle_mouse_scroll(&mut self, delta: MouseScrollDelta) {
+        if let MouseScrollDelta::LineDelta(x, y) = delta {
+            self.mouse_scroll_delta += y;
+        }
+    }
 
     fn handle_mouse_move(&mut self, position: PhysicalPosition<f64>) {
         let offset = (position.x - self.mouse_position.x, position.y - self.mouse_position.y);
@@ -184,15 +168,10 @@ impl CameraController {
         let forward = camera.target - camera.eye;
         let forward_norm = forward.normalize();
         let forward_mag = forward.magnitude();
-
-        // Prevents glitching when the camera gets too close to the
-        // center of the scene.
-        if self.is_forward_pressed && forward_mag > self.speed {
-            camera.eye += forward_norm * self.speed;
-        }
-        if self.is_backward_pressed {
-            camera.eye -= forward_norm * self.speed;
-        }
+        
+        camera.eye += forward_norm * self.sspeed * self.mouse_scroll_delta * forward_mag;
+        
+        self.mouse_scroll_delta = 0.0;
 
         let right = forward_norm.cross(camera.up);
 
@@ -216,19 +195,7 @@ impl CameraController {
             camera.eye += camera.up * self.tspeed * self.mouse_offset.1 as f32 * forward_mag;
 
             self.mouse_offset = (0.0, 0.0);
-
-            println!("{:?}, {:?}", camera.target, (right * self.speed * self.mouse_offset.0 as f32).normalize());
         }
-
-        // if self.is_right_pressed {
-        //     // Rescale the distance between the target and the eye so 
-        //     // that it doesn't change. The eye, therefore, still 
-        //     // lies on the circle made by the target and eye.
-        //     camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
-        // }
-        // if self.is_left_pressed {
-        //     camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
-        // }
     }
 }
 
@@ -257,6 +224,12 @@ pub struct State {
 impl State {
     async fn new(window: Arc<Window>) -> anyhow::Result<State> {
         let size = window.inner_size();
+        
+        window.set_resizable(true);
+        window.set_decorations(false);
+        window.set_enabled_buttons(WindowButtons::all());
+        
+        println!("{:?}", window.enabled_buttons());
 
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
@@ -385,7 +358,7 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
-        let camera_controller = CameraController::new(0.02, 0.002);
+        let camera_controller = CameraController::new(0.02, 0.002, 0.1);
 
         let render_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -551,6 +524,10 @@ impl State {
     fn handle_mouse_click (&mut self, code: MouseButton, is_pressed: bool) {
         self.camera_controller.handle_mouse_click(code, is_pressed);
     }
+    
+    fn handle_mouse_scroll(&mut self, delta: MouseScrollDelta) {
+        self.camera_controller.handle_mouse_scroll(delta);
+    }
 
     fn handle_mouse_move(&mut self, position: PhysicalPosition<f64>) {
         let size = self.window.inner_size();
@@ -591,7 +568,6 @@ impl ApplicationHandler<State> for App {
             const CANVAS_ID: &str = "canvas";
 
             let window = wgpu::web_sys::window().unwrap_throw();
-            println!("hi");
             let document = window.document().unwrap_throw();
             let canvas = document.get_element_by_id(CANVAS_ID).unwrap_throw();
             let html_canvas_element = canvas.unchecked_into();
@@ -664,6 +640,8 @@ impl ApplicationHandler<State> for App {
                     }
                 }
             }
+            WindowEvent::MouseWheel { delta, ..} =>
+                state.handle_mouse_scroll(delta),
             WindowEvent::MouseInput { state: btn_state, button, .. } => 
                 state.handle_mouse_click(button, btn_state.is_pressed()),
             WindowEvent::CursorMoved { device_id:_, position } => 
@@ -710,3 +688,4 @@ pub fn run_web() -> Result<(), wasm_bindgen::JsValue> {
 
     Ok(())
 }
+
