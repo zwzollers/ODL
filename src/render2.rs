@@ -71,7 +71,17 @@ impl CallbackTrait for TestCallBack {
 
 pub fn custom_painting(angle: &mut f32, ui: &mut egui::Ui) {
     let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(300.0), egui::Sense::drag());
+    if response.hovered() {
+        let scroll = ui.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::MouseWheel { delta, .. } => Some(*delta),
+                _ => None,
+            })
+        });
 
+        println!("{scroll:?}");
+    }
+    
     *angle += response.drag_delta().x * 0.01;
 
     // Clone locals so we can move them into the paint callback:

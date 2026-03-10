@@ -1,4 +1,4 @@
-use std::{iter, sync::Arc};
+use std::{iter, num::NonZeroU64, sync::Arc};
 
 use wgpu::util::DeviceExt;
 use winit::{
@@ -306,7 +306,7 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-                let camera = Camera {
+        let camera = Camera {
             // position the camera 1 unit up and 2 units back
             // +z is out of the screen
             eye: (0.0, 1.0, 2.0).into(),
@@ -339,7 +339,7 @@ impl State {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: None,
+                        min_binding_size: NonZeroU64::new(64),
                     },
                     count: None,
                 }

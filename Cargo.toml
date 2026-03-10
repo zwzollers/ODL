@@ -9,6 +9,9 @@ wasm-opt = false
 [profile.release]
 strip = true
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 anyhow = "1.0"
 winit = { version = "0.30.13", features = ["android-native-activity"] }
