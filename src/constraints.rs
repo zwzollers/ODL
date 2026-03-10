@@ -60,8 +60,6 @@ impl ConstraintSolver {
                 if solved {
                     progress = true;
                     equ.solved = true;
-                    //println!("solved: {equ:?}");
-                    //println!("vars: {:?}", self.vars);
                 }
             }
 

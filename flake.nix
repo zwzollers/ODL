@@ -1,28 +1,46 @@
 {
-  description = "Rust flake";
-  inputs =
-    {
-      nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable"; # or whatever vers
-    };
-  
-  outputs = { self, nixpkgs, ... }@inputs:
-    let
-      system = "x86_64-linux"; # your version
-      pkgs = nixpkgs.legacyPackages.${system}; 
-      libPath = with pkgs; lib.makeLibraryPath [
-           libGL
-           libxkbcommon
-           wayland
-    ];   
-    in
-    {
-      devShells.${system}.default = pkgs.mkShell
-      {
-        packages = with pkgs; [ rustc cargo wayland ]; # whatever you need
-        
-        RUST_LOG = "debug";
-        RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
-        LD_LIBRARY_PATH = libPath;
-      };
-    };
+  description = "eframe devShell";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay.url = "github:oxalica/rust-overlay";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
+
+  outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        overlays = [ (import rust-overlay) ];
+        pkgs = import nixpkgs { inherit system overlays; };
+      in with pkgs; {
+        devShells.default = mkShell rec {
+          buildInputs = [
+            # Rust
+            rust-bin.stable.latest.default
+            trunk
+            rustup
+
+            # misc. libraries
+            openssl
+            pkg-config
+
+            # GUI libs
+            libxkbcommon
+            libGL
+            fontconfig
+
+            # wayland libraries
+            wayland
+
+            # x11 libraries
+            xorg.libXcursor
+            xorg.libXrandr
+            xorg.libXi
+            xorg.libX11
+
+          ];
+
+          LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
+        };
+      });
 }

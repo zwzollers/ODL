@@ -1,12 +1,14 @@
-use std::{iter, num::NonZeroU64, sync::Arc};
+use std::{num::NonZeroU64, sync::{Arc, RwLock}};
 
-use wgpu::util::DeviceExt;
-use winit::{
-    application::ApplicationHandler, dpi::PhysicalPosition, event::*, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowButtons}
+use bytemuck::NoUninit;
+use eframe::{
+    egui_wgpu::{self, wgpu}, wgpu::util::DeviceExt,
 };
+use egui::{PointerButton, Vec2};
+use egui_wgpu::CallbackTrait;
+use log::info;
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
+use crate::TemplateApp;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -36,10 +38,6 @@ impl Vertex {
     }
 }
 
-//if struct doesnt implement bytemuck
-// unsafe impl bytemuck::Pod for Vertex {}
-// unsafe impl bytemuck::Zeroable for Vertex {}
-
 const VERTICES: &[Vertex] = &[
     Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5] }, // A
     Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5] }, // B
@@ -53,15 +51,15 @@ const INDICES: &[u16] = &[
     1, 2, 4,
     2, 3, 4,
 ];
- 
-struct Camera {
-    eye: cgmath::Point3<f32>,
-    target: cgmath::Point3<f32>,
-    up: cgmath::Vector3<f32>,
-    aspect: f32,
-    fovy: f32,
-    znear: f32,
-    zfar: f32,
+
+pub struct Camera {
+    pub eye: cgmath::Point3<f32>,
+    pub target: cgmath::Point3<f32>,
+    pub up: cgmath::Vector3<f32>,
+    pub aspect: f32,
+    pub fovy: f32,
+    pub znear: f32,
+    pub zfar: f32,
 }
 
 impl Camera {
@@ -87,7 +85,7 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::from_co
 // We need this for Rust to store our data correctly for the shaders
 #[repr(C)]
 // This is so we can store this in a buffer
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct CameraUniform {
     // We can't use cgmath with bytemuck directly, so we'll have
     // to convert the Matrix4 into a 4x4 f32 array
@@ -107,24 +105,24 @@ impl CameraUniform {
     }
 }
 
-struct CameraController {
+pub struct CameraController {
     speed: f32,
     tspeed: f32,
     sspeed: f32,
-    mouse_position: PhysicalPosition<f64>,
-    mouse_offset: (f64, f64),
+    mouse_position: Vec2,
+    mouse_offset: (f32, f32),
     mouse_scroll_delta: f32,
     is_rotating: bool,
     is_translating: bool,
 }
 
 impl CameraController {
-    fn new(speed: f32, tspeed: f32, sspeed: f32) -> Self {
+    pub fn new(speed: f32, tspeed: f32, sspeed: f32) -> Self {
         Self {
             speed,
             tspeed,
             sspeed,
-            mouse_position: PhysicalPosition { x: 0.0, y: 0.0 },
+            mouse_position: Vec2 { x: 0.0, y: 0.0 },
             mouse_offset: (0.0, 0.0),
             mouse_scroll_delta: 0.0,
             is_rotating: false,
@@ -132,17 +130,17 @@ impl CameraController {
         }
     }
 
-    fn handle_key(&mut self, code: KeyCode, is_pressed: bool) -> bool {
-        true
-    }
+    // fn handle_key(&mut self, code: KeyCode, is_pressed: bool) -> bool {
+    //     true
+    // }
 
-    fn handle_mouse_click(&mut self, code: MouseButton, is_pressed: bool) {
+    pub fn handle_mouse_click(&mut self, code: PointerButton, is_pressed: bool) {
         match code {
-            MouseButton::Middle => {
+            PointerButton::Middle => {
                 self.is_rotating = is_pressed;
                 self.mouse_offset = (0.0, 0.0);
             }
-            MouseButton::Left => {
+            PointerButton::Primary => {
                 self.is_translating = is_pressed;
                 self.mouse_offset = (0.0, 0.0);
             }
@@ -150,20 +148,16 @@ impl CameraController {
         }
     }
     
-    fn handle_mouse_scroll(&mut self, delta: MouseScrollDelta) {
-        if let MouseScrollDelta::LineDelta(x, y) = delta {
-            self.mouse_scroll_delta += y;
-        }
+    pub fn handle_mouse_scroll(&mut self, delta: Vec2) {
+        
+            self.mouse_scroll_delta += delta.y;
     }
 
-    fn handle_mouse_move(&mut self, position: PhysicalPosition<f64>) {
-        let offset = (position.x - self.mouse_position.x, position.y - self.mouse_position.y);
-
-        self.mouse_offset = (self.mouse_offset.0 + offset.0, self.mouse_offset.1 + offset.1);
-        self.mouse_position = position;
+    pub fn handle_mouse_move(&mut self, offset: Vec2) {
+        self.mouse_offset = (self.mouse_offset.0 + offset.x, self.mouse_offset.1 + offset.y);
     }
 
-    fn update_camera(&mut self, camera: &mut Camera) {
+    pub fn update_camera(&mut self, camera: &mut Camera) {
         use cgmath::InnerSpace;
         let forward = camera.target - camera.eye;
         let forward_norm = forward.normalize();
@@ -199,493 +193,245 @@ impl CameraController {
     }
 }
 
-pub struct State {
-    surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    is_surface_configured: bool,
-    window: Arc<Window>,
-
-    render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_indicies: u32,
-
-    camera:Camera,
-    camera_uniform: CameraUniform,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
-    camera_controller: CameraController,
-
-    bg_color: wgpu::Color,
+struct ObjectViewResources {
+    pub pipeline: wgpu::RenderPipeline,
+    pub bind_group: wgpu::BindGroup,
+    pub camera_buffer: wgpu::Buffer,
+    pub object: Arc<RwLock<Object>>,
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
 }
 
-impl State {
-    async fn new(window: Arc<Window>) -> anyhow::Result<State> {
-        let size = window.inner_size();
+#[derive(Clone, Default)]
+pub struct ObjectView {
+    camera: CameraUniform,
+}
+
+impl CallbackTrait for ObjectView {
+    fn prepare(
+            &self,
+            _device: &wgpu::Device,
+            queue: &wgpu::Queue,
+            _screen_descriptor: &egui_wgpu::ScreenDescriptor,
+            _egui_encoder: &mut wgpu::CommandEncoder,
+            callback_resources: &mut egui_wgpu::CallbackResources,
+        ) -> Vec<wgpu::CommandBuffer> {
+        let resources: &ObjectViewResources = callback_resources.get().unwrap();
+        {
+            let obj = resources.object.read().unwrap();
+            
+            queue.write_buffer(
+                &resources.camera_buffer,
+                0,
+                bytemuck::cast_slice(&[self.camera]),
+            );
+            queue.write_buffer(
+                &resources.vertex_buffer,
+                0,
+                bytemuck::cast_slice(obj.verticies.as_slice()),
+            );
+            queue.write_buffer(
+                &resources.index_buffer,
+                0,
+                bytemuck::cast_slice(obj.indicies.as_slice()),
+            );
+        }
         
-        window.set_resizable(true);
-        window.set_decorations(false);
-        window.set_enabled_buttons(WindowButtons::all());
-        
-        println!("{:?}", window.enabled_buttons());
+        Vec::new()
+    }
+    fn finish_prepare(
+            &self,
+            _device: &wgpu::Device,
+            _queue: &wgpu::Queue,
+            _egui_encoder: &mut wgpu::CommandEncoder,
+            _callback_resources: &mut egui_wgpu::CallbackResources,
+        ) -> Vec<wgpu::CommandBuffer> {
+        Vec::new()
+    }
+    fn paint(
+            &self,
+            _info: egui::PaintCallbackInfo,
+            render_pass: &mut wgpu::RenderPass<'static>,
+            callback_resources: &egui_wgpu::CallbackResources,
+        ) {
+        let resources: &ObjectViewResources = callback_resources.get().unwrap();
+        {
+            let obj = resources.object.read().unwrap();
+            let num_indicies = obj.indicies.len();
+            render_pass.set_pipeline(&resources.pipeline);
+            render_pass.set_bind_group(0, &resources.bind_group, &[]);
+            render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..(num_indicies as u32), 0, 0..1); // 3.
+        }
+    }
+}
 
-        // The instance is a handle to our GPU
-        // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "linux")))]
-            backends: wgpu::Backends::PRIMARY,
-            #[cfg(target_os = "linux")]
-            backends: wgpu::Backends::GL,
-            #[cfg(target_arch = "wasm32")]
-            backends: wgpu::Backends::GL,
-            ..Default::default()
-        });
 
-        let surface = instance.create_surface(window.clone()).unwrap();
+pub fn render_object_view (app: &mut TemplateApp, ui: &mut egui::Ui) {
+    egui::Frame::canvas(ui.style()).show(ui, |ui| {
+        let (rect, resp) = ui.allocate_at_least(ui.available_size(), egui::Sense::all());
 
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await?;
+        if resp.hovered() {
+            ui.input(|i| {
+                for event in &i.events {
+                    info!("{event:?}");
+                    match event { 
+                        egui::Event::MouseWheel { delta, ..} => app.camera_controller.handle_mouse_scroll(*delta),
+                        egui::Event::MouseMoved(pos) => app.camera_controller.handle_mouse_move(*pos),
+                        egui::Event::MouseMoved(pos) => app.camera_controller.handle_mouse_move(*pos),
+                        egui::Event::PointerButton { button, pressed, ..} => app.camera_controller.handle_mouse_click(*button, *pressed),
+                        _ => ()
+                    };
+                }
+            });
+        }
 
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                experimental_features: wgpu::ExperimentalFeatures::disabled(),
-                // WebGL doesn't support all of wgpu's features, so if
-                // we're building for the web we'll have to disable some.
-                required_limits: if cfg!(target_arch = "wasm32") {
-                    wgpu::Limits::downlevel_webgl2_defaults()
-                        .using_resolution(adapter.limits())
-                } else {
-                    wgpu::Limits::default()
-                },
-                memory_hints: Default::default(),
-                trace: wgpu::Trace::Off,
-            })
-            .await?;
-
-        let surface_caps = surface.get_capabilities(&adapter);
-
-        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
-        // one will result all the colors comming out darker. If you want to support non
-        // Srgb surfaces, you'll need to account for that when drawing to the frame.
-        let surface_format = surface_caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(surface_caps.formats[0]);
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-            width: size.width,
-            height: size.height,
-            present_mode: surface_caps.present_modes[0],
-            alpha_mode: surface_caps.alpha_modes[0],
-            desired_maximum_frame_latency: 2,
-            view_formats: vec![],
-        };
-
-        let bg_color = wgpu::Color {
-            r: 1.0,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        };
-
-        
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        });
-
-        let camera = Camera {
-            // position the camera 1 unit up and 2 units back
-            // +z is out of the screen
-            eye: (0.0, 1.0, 2.0).into(),
-            // have it look at the origin
-            target: (0.0, 0.0, 0.0).into(),
-            // which way is "up"
-            up: cgmath::Vector3::unit_y(),
-            aspect: config.width as f32 / config.height as f32,
-            fovy: 45.0,
-            znear: 0.1,
-            zfar: 100.0,
-        };
+        app.camera_controller.update_camera(&mut app.camera);
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera);
+        camera_uniform.update_view_proj(&app.camera);
 
-        let camera_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Buffer"),
-                contents: bytemuck::cast_slice(&[camera_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
+        let object_view = ObjectView {
+            camera: camera_uniform,
+        };
 
-        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: NonZeroU64::new(64),
-                    },
-                    count: None,
-                }
-            ],
-            label: Some("camera_bind_group_layout"),
-        });
+        let callback = egui_wgpu::Callback::new_paint_callback(rect, object_view);
+        
+        ui.painter().add(callback);
+    });
+}
 
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
-                }
-            ],
-            label: Some("camera_bind_group"),
-        });
+pub fn init_object_View<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwLock<Object>>) -> Option<()> {
+    let wgpu_render_state = cc.wgpu_render_state.as_ref().unwrap();
 
-        let camera_controller = CameraController::new(0.02, 0.002, 0.1);
+    let device = &wgpu_render_state.device;
 
-        let render_pipeline_layout =
-        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[
-                &camera_bind_group_layout,
-            ],
-            immediate_size: 0,
-        });
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("obj"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("test.wgsl").into()),
+    });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"), // 1.
-                buffers: &[Vertex::desc(),], // 2.
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
+    // let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    //     label: Some("custom3d"),
+    //     contents: bytemuck::cast_slice(&[0.0_f32; 4]), // 16 bytes aligned!
+    //     usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+    // });
+
+    let camera_buffer = device.create_buffer_init(
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[[[0.0_f32; 4]; 4]]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }
+    );
+
+
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("obj"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
             },
-            fragment: Some(wgpu::FragmentState { // 3.
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState { // 4.
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
+            count: None,
+        }],
+    });
 
-                primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList, // 1.
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw, // 2.
-                cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
-                unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
-                conservative: false,
-            },
-            depth_stencil: None, // 1.
-            multisample: wgpu::MultisampleState {
-                count: 1, // 2.
-                mask: !0, // 3.
-                alpha_to_coverage_enabled: false, // 4.
-            },
-            multiview_mask: None, // 5.
-            cache: None, // 6.
-        });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("obj"),
+        layout: &bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: camera_buffer.as_entire_binding()
+        }],
+    });
 
-        let vertex_buffer = device.create_buffer_init(
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("custom3d"),
+        bind_group_layouts: &[&bind_group_layout],
+        push_constant_ranges: &[],
+    });
+
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("custom3d"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[Vertex::desc()],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu_render_state.target_format.into())],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None
+    });
+
+    let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
                 contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsages::VERTEX,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             }
         );
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX
-            }
-        );
+    let index_buffer = device.create_buffer_init(
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        }
+    );
 
-        let num_indicies = INDICES.len() as u32;
-
-        Ok(Self {
-            surface,
-            device,
-            queue,
-            config,
-            is_surface_configured: false,
-            window,
-            render_pipeline,
+    
+    wgpu_render_state
+        .renderer
+        .write()
+        .callback_resources
+        .insert(ObjectViewResources {
+            pipeline,
+            bind_group,
+            camera_buffer,
+            object,
             vertex_buffer,
             index_buffer,
-            num_indicies,
-            camera,
-            camera_uniform,
-            camera_buffer,
-            camera_bind_group,
-            camera_controller,
-            bg_color,
-        })
-    }
+    });
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
-            self.config.width = width;
-            self.config.height = height;
-            self.surface.configure(&self.device, &self.config);
-            self.is_surface_configured = true;
-        }
-    }
+    Some(())
 
-    fn update(&mut self) {
-        self.camera_controller.update_camera(&mut self.camera);
-        self.camera_uniform.update_view_proj(&self.camera);
-        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
-    }
-
-    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        self.window.request_redraw();
-
-        // We can't render unless the surface is configured
-        if !self.is_surface_configured {
-            return Ok(());
-        }
-
-        let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
-
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(self.bg_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-                multiview_mask: None,
-            });
-
-            render_pass.set_pipeline(&self.render_pipeline); // 2.
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.num_indicies, 0, 0..1); // 3.
-        }
-
-        self.queue.submit(iter::once(encoder.finish()));
-        output.present();
-
-        Ok(())
-    }
-
-    fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
-        if code == KeyCode::Escape && is_pressed {
-            event_loop.exit();
-        } else {
-            self.camera_controller.handle_key(code, is_pressed);
-        }
-    }
-
-    fn handle_mouse_click (&mut self, code: MouseButton, is_pressed: bool) {
-        self.camera_controller.handle_mouse_click(code, is_pressed);
-    }
-    
-    fn handle_mouse_scroll(&mut self, delta: MouseScrollDelta) {
-        self.camera_controller.handle_mouse_scroll(delta);
-    }
-
-    fn handle_mouse_move(&mut self, position: PhysicalPosition<f64>) {
-        let size = self.window.inner_size();
-        self.bg_color.r = position.x / (size.width as f64);
-        self.bg_color.g = position.y / (size.height as f64);
-        self.camera_controller.handle_mouse_move(position);
-    }
 }
 
-pub struct App {
-    #[cfg(target_arch = "wasm32")]
-    proxy: Option<winit::event_loop::EventLoopProxy<State>>,
-    state: Option<State>,
+#[derive(Default)]
+pub struct Object {
+    verticies: Vec<Vertex>,
+    indicies: Vec<u16>
 }
 
-impl App {
-    pub fn new(#[cfg(target_arch = "wasm32")] event_loop: &EventLoop<State>) -> Self {
-        #[cfg(target_arch = "wasm32")]
-        let proxy = Some(event_loop.create_proxy());
+impl Object {
+    pub fn test() -> Self {
         Self {
-            state: None,
-            #[cfg(target_arch = "wasm32")]
-            proxy,
+            verticies: vec![
+                Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [1.5, 0.0, 0.5] }, // A
+                Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5] }, // B
+                Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5] }, // C
+                Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5] }, // D
+                Vertex { position: [0.44147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5] }, // E
+            ],
+            indicies: vec![
+                0, 1, 4,
+                1, 2, 4,
+                2, 3, 4, 0
+            ]
         }
     }
 }
-
-impl ApplicationHandler<State> for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        #[allow(unused_mut)]
-        let mut window_attributes = Window::default_attributes();
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            use wasm_bindgen::JsCast;
-            use winit::platform::web::WindowAttributesExtWebSys;
-
-            const CANVAS_ID: &str = "canvas";
-
-            let window = wgpu::web_sys::window().unwrap_throw();
-            let document = window.document().unwrap_throw();
-            let canvas = document.get_element_by_id(CANVAS_ID).unwrap_throw();
-            let html_canvas_element = canvas.unchecked_into();
-            window_attributes = window_attributes.with_canvas(Some(html_canvas_element));
-        }
-
-        let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            // If we are not on web we can use pollster to
-            // await the
-            self.state = Some(pollster::block_on(State::new(window)).unwrap());
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            if let Some(proxy) = self.proxy.take() {
-                wasm_bindgen_futures::spawn_local(async move {
-                    assert!(proxy
-                        .send_event(
-                            State::new(window)
-                                .await
-                                .expect("Unable to create canvas!!!")
-                        )
-                        .is_ok())
-                });
-            }
-        }
-    }
-
-    #[allow(unused_mut)]
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut event: State) {
-        #[cfg(target_arch = "wasm32")]
-        {
-            event.window.request_redraw();
-            event.resize(
-                event.window.inner_size().width,
-                event.window.inner_size().height,
-            );
-        }
-        self.state = Some(event);
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _window_id: winit::window::WindowId,
-        event: WindowEvent,
-    ) {
-        let state = match &mut self.state {
-            Some(canvas) => canvas,
-            None => return,
-        };
-
-        match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => state.resize(size.width, size.height),
-            WindowEvent::RedrawRequested => {
-                state.update();
-                match state.render() {
-                    Ok(_) => {}
-                    // Reconfigure the surface if it's lost or outdated
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        let size = state.window.inner_size();
-                        state.resize(size.width, size.height);
-                    }
-                    Err(e) => {
-                        log::error!("Unable to render {}", e);
-                    }
-                }
-            }
-            WindowEvent::MouseWheel { delta, ..} =>
-                state.handle_mouse_scroll(delta),
-            WindowEvent::MouseInput { state: btn_state, button, .. } => 
-                state.handle_mouse_click(button, btn_state.is_pressed()),
-            WindowEvent::CursorMoved { device_id:_, position } => 
-                state.handle_mouse_move( position), 
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(code),
-                        state: key_state,
-                        ..
-                    },
-                ..
-            } => state.handle_key(event_loop, code, key_state.is_pressed()),
-            _ => {}
-        }
-    }
-}
-
-pub fn run() -> anyhow::Result<()> {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        env_logger::init();
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        console_log::init_with_level(log::Level::Info).unwrap_throw();
-    }
-
-    let event_loop = EventLoop::with_user_event().build()?;
-    let mut app = App::new(
-        #[cfg(target_arch = "wasm32")]
-        &event_loop,
-    );
-    event_loop.run_app(&mut app)?;
-
-    Ok(())
-}
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(start)]
-pub fn run_web() -> Result<(), wasm_bindgen::JsValue> {
-    console_error_panic_hook::set_once();
-    run().unwrap_throw();
-
-    Ok(())
-}
-

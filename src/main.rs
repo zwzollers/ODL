@@ -1,119 +1,67 @@
+#![warn(clippy::all, rust_2018_idioms)]
 //#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-mod constraints;
-use constraints::*;
-
-mod render;
-use render::run;
-
-mod render2;
-use render2::{ render_shader_widget, init_shader };
-
-
-#[derive(Default)]
-struct MyApp {
-    angle: f32,
-}
-
-impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Hello Ferris");
-            egui::ScrollArea::both()
-                .auto_shrink([false; 2])
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 0.0;
-                        ui.label("The triangle is being painted using ");
-                        ui.hyperlink_to("WGPU", "https://wgpu.rs");
-                        ui.label(" (Portable Rust graphics API awesomeness)");
-                    });
-                    ui.label("It's not a very impressive demo, but it shows you can embed 3D inside of egui.");
-                    render_shader_widget(&mut self.angle, ui);
-                    
-                    ui.label("Drag to rotate!");
-                });
-        });
-    }
-}
-
-impl MyApp {
-    pub fn new<'a>(cc: &'a eframe::CreationContext<'a>) -> Option<Self> {
-        init_shader(cc)?;
-        Some(Self { angle: 0.0 })
-    }
-}
-
-fn main() {
-    
+// When compiling natively:
+#[cfg(not(target_arch = "wasm32"))]
+fn main() -> eframe::Result {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
-    let options = eframe::NativeOptions {
-            renderer: eframe::Renderer::Wgpu,
-            ..Default::default()
-        };
-        eframe::run_native(
-            "moirë",
-            options,
-            Box::new(|cc| Ok(Box::new(MyApp::new(cc).unwrap()))),
-        );
-    
 
-    println!("{:?}", run());
-
-    let mut solver = ConstraintSolver::new();
-
-    let ox = solver.add_var_value(0.0);
-    let oy = solver.add_var_value(0.0);
-
-    let origin = Point::new(ox, oy);
-
-    let p0 = solver.add_point();
-    let p1 = solver.add_point();
-    let p2 = solver.add_point();
-    let p3 = solver.add_point();
-
-    let v0 = solver.add_var_value(10.0);
-    let v1 = solver.add_var_value(5.0);
-
-    let v2 = solver.add_var();
-
-    let l0 = Line::new(&p0, &p1);
-    let l1 = Line::new(&p1, &p2);
-    let l2 = Line::new(&p2, &p3);
-    let l3 = Line::new(&p3, &p0);
-
-    solver.add_constraint(Constraint::LHorizontal { l: &l0 });
-    solver.add_constraint(Constraint::LHorizontal { l: &l2 });
-
-    solver.add_constraint(Constraint::LVertical { l: &l1 });
-    solver.add_constraint(Constraint::LVertical { l: &l3 });
-
-    solver.add_constraint(Constraint::LEast { l: &l0 });
-    solver.add_constraint(Constraint::LNorth { l: &l1 });
-
-    solver.add_constraint(Constraint::PEqual { p0: &p0, p1: &origin });
-
-    solver.add_constraint(Constraint::LDimension { l: &l0, d:v0 });
-
-    solver.add_constraint(Constraint::LDimension { l: &l1, d:v1 });
-
-    solver.add_constraint(Constraint::LDimension { l: &l1, d:v2 });
-
-
-    let solved = solver.solve();
-    
-    if solved {
-        println!("Solved: {:?}", solver.vars);
-    } else {
-        println!("Not Solved: {:?}", solver.vars);
-    }
-
-    
-    
-    
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([400.0, 300.0])
+            .with_min_inner_size([300.0, 220.0]),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "eframe template",
+        native_options,
+        Box::new(|cc| Ok(Box::new(eframe_template::TemplateApp::new(cc)))),
+    )
 }
 
-enum LineKind {
-    Line,
-    Arc
+// When compiling to web using trunk:
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    use eframe::wasm_bindgen::JsCast as _;
+
+    // Redirect `log` message to `console.log` and friends:
+    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+
+    let web_options = eframe::WebOptions::default();
+
+    wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .expect("No window")
+            .document()
+            .expect("No document");
+
+        let canvas = document
+            .get_element_by_id("the_canvas_id")
+            .expect("Failed to find the_canvas_id")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("the_canvas_id was not a HtmlCanvasElement");
+
+        let start_result = eframe::WebRunner::new()
+            .start(
+                canvas,
+                web_options,
+                Box::new(|cc| Ok(Box::new(eframe_template::TemplateApp::new(cc)))),
+            )
+            .await;
+
+        // Remove the loading text and spinner:
+        if let Some(loading_text) = document.get_element_by_id("loading_text") {
+            match start_result {
+                Ok(_) => {
+                    loading_text.remove();
+                }
+                Err(e) => {
+                    loading_text.set_inner_html(
+                        "<p> The app has crashed. See the developer console for details. </p>",
+                    );
+                    panic!("Failed to start eframe: {e:?}");
+                }
+            }
+        }
+    });
 }

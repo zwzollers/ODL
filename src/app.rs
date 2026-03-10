@@ -8,6 +8,8 @@ use super::render::*;
 pub struct TemplateApp {
     // Example stuff:
     label: String,
+    
+    text_width: f32,
 
     #[serde(skip)] // This how you opt-out of serialization of a field
     value: f32,
@@ -47,6 +49,7 @@ impl Default for TemplateApp {
         Self {
             // Example stuff:
             label: "Hello World!".to_owned(),
+            text_width: 0.0,
             value: 2.7,
             object_view: ObjectView::default(),
             object: Arc::new(RwLock::new(Object::test())),
@@ -82,51 +85,24 @@ impl eframe::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
-
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
-
-            egui::MenuBar::new().ui(ui, |ui| {
-                // NOTE: no File->Quit on web pages!
-                let is_web = cfg!(target_arch = "wasm32");
-                if !is_web {
-                    ui.menu_button("File", |ui| {
-                        if ui.button("Quit").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    });
-                    ui.add_space(16.0);
-                }
-
-                egui::widgets::global_theme_preference_buttons(ui);
-            });
-        });
+        
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("eframe template");
-
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(&mut self.label);
+            egui::Frame::canvas(ui.style()).show(ui, |ui| {
+                egui::ScrollArea::both().show(ui, |ui| {
+                    // Place the TextEdit inside the ScrollArea
+                    
+                    ui.add(
+                        egui::TextEdit::multiline(&mut self.label)
+                            .desired_width(ui.available_width()-self.text_width-20.0)// Allows the text to extend horizontally indefinitely
+                            .code_editor() // Optional: Adds code editor styling/features
+                    );
+                });
             });
-
-            ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                self.value += 1.0;
-            }
-
-            ui.separator();
-
-            ui.add(egui::github_link_file!(
-                "https://github.com/emilk/eframe_template/blob/main/",
-                "Source code."
-            ));
         });
-
-        egui::SidePanel::right("obj_view").show(ctx, |ui| {
+        
+        egui::SidePanel::right("obj_view").resizable(true).show(ctx, |ui| {
+            self.text_width = ui.available_width();
             render_object_view(self, ui);
         });
     }
