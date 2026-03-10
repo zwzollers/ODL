@@ -279,10 +279,8 @@ pub fn render_object_view (app: &mut TemplateApp, ui: &mut egui::Ui) {
         if resp.hovered() {
             ui.input(|i| {
                 for event in &i.events {
-                    info!("{event:?}");
                     match event { 
                         egui::Event::MouseWheel { delta, ..} => app.camera_controller.handle_mouse_scroll(*delta),
-                        //egui::Event::MouseMoved(pos) => app.camera_controller.handle_mouse_move(*pos),
                         egui::Event::PointerMoved(pos) => app.camera_controller.handle_mouse_move(*pos),
                         egui::Event::PointerButton { button, pressed, ..} => app.camera_controller.handle_mouse_click(*button, *pressed),
                         _ => ()

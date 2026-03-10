@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{f32, sync::{Arc, RwLock}};
+
+use eframe::wgpu::naga::proc::Layouter;
+use egui::text::{LayoutJob, TextWrapping};
 
 use super::render::*;
 
@@ -86,24 +89,37 @@ impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                egui::ScrollArea::both().show(ui, |ui| {
-                    // Place the TextEdit inside the ScrollArea
-                    
-                    ui.add(
-                        egui::TextEdit::multiline(&mut self.label)
-                            .desired_width(ui.available_width()-self.text_width-20.0)// Allows the text to extend horizontally indefinitely
-                            .code_editor() // Optional: Adds code editor styling/features
-                    );
-                });
-            });
-        });
-        
         egui::SidePanel::right("obj_view").resizable(true).show(ctx, |ui| {
-            self.text_width = ui.available_width();
+            //self.text_width = ui.available_width();
             render_object_view(self, ui);
         });
+        
+        
+        let theme = egui_extras::syntax_highlighting::CodeTheme::from_memory(ctx, &ctx.style());
+        let mut layouter = |ui: &egui::Ui, string: &dyn egui::TextBuffer, wrap_width: f32| {
+            let mut layout_job =  egui_extras::syntax_highlighting::highlight(ui.ctx(), &ctx.style(), &theme, string.as_str(), "".into());
+            ui.fonts_mut(|f| f.layout_job(layout_job))
+        };
+        
+        // let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+        //     let mut layout_job = LayoutJob::default();
+        //     //layout_job.wrap.max_width = f32::INFINITY;
+        //     ui.fonts_mut(|f| f.layout_job(layout_job))
+        // };
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+                egui::ScrollArea::both().auto_shrink([false; 2]).show(ui, |ui| {
+                    ui.add(
+                        egui::TextEdit::multiline(&mut self.label)
+                            //.desired_width(ui.available_width()-self.text_width-20.0)
+                            //.desired_width(ui.available_width())
+                            .desired_width(f32::INFINITY)
+                            .code_editor()
+                            .layouter(&mut layouter)
+                    );
+                });
+        });
+        
+        
     }
 }
