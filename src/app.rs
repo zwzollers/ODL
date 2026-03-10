@@ -44,7 +44,7 @@ impl Default for TemplateApp {
             zfar: 100.0,
         };
 
-        let camera_controller = CameraController::new(0.02, 0.002, 0.1);
+        let camera_controller = CameraController::new(0.02, 0.001, 0.1);
 
         Self {
             // Example stuff:

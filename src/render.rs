@@ -4,7 +4,7 @@ use bytemuck::NoUninit;
 use eframe::{
     egui_wgpu::{self, wgpu}, wgpu::util::DeviceExt,
 };
-use egui::{PointerButton, Vec2};
+use egui::{PointerButton, Pos2, Vec2};
 use egui_wgpu::CallbackTrait;
 use log::info;
 
@@ -109,7 +109,7 @@ pub struct CameraController {
     speed: f32,
     tspeed: f32,
     sspeed: f32,
-    mouse_position: Vec2,
+    mouse_position: Pos2,
     mouse_offset: (f32, f32),
     mouse_scroll_delta: f32,
     is_rotating: bool,
@@ -122,7 +122,7 @@ impl CameraController {
             speed,
             tspeed,
             sspeed,
-            mouse_position: Vec2 { x: 0.0, y: 0.0 },
+            mouse_position: Pos2 { x: 0.0, y: 0.0 },
             mouse_offset: (0.0, 0.0),
             mouse_scroll_delta: 0.0,
             is_rotating: false,
@@ -150,11 +150,15 @@ impl CameraController {
     
     pub fn handle_mouse_scroll(&mut self, delta: Vec2) {
         
-            self.mouse_scroll_delta += delta.y;
+            self.mouse_scroll_delta += delta.y.clamp(-1.0, 1.0);
     }
 
-    pub fn handle_mouse_move(&mut self, offset: Vec2) {
+    pub fn handle_mouse_move(&mut self, pos: Pos2) {
+        let offset = Pos2::new(pos.x - self.mouse_position.x, pos.y - self.mouse_position.y); 
+
         self.mouse_offset = (self.mouse_offset.0 + offset.x, self.mouse_offset.1 + offset.y);
+
+        self.mouse_position = pos;
     }
 
     pub fn update_camera(&mut self, camera: &mut Camera) {
@@ -278,8 +282,8 @@ pub fn render_object_view (app: &mut TemplateApp, ui: &mut egui::Ui) {
                     info!("{event:?}");
                     match event { 
                         egui::Event::MouseWheel { delta, ..} => app.camera_controller.handle_mouse_scroll(*delta),
-                        egui::Event::MouseMoved(pos) => app.camera_controller.handle_mouse_move(*pos),
-                        egui::Event::MouseMoved(pos) => app.camera_controller.handle_mouse_move(*pos),
+                        //egui::Event::MouseMoved(pos) => app.camera_controller.handle_mouse_move(*pos),
+                        egui::Event::PointerMoved(pos) => app.camera_controller.handle_mouse_move(*pos),
                         egui::Event::PointerButton { button, pressed, ..} => app.camera_controller.handle_mouse_click(*button, *pressed),
                         _ => ()
                     };

@@ -1,3 +1,6 @@
+# THIS IS HEAVILY WIP AND NOTHING IS SET IN STONE
+
+
 # ODL Language Specification
 
 This repositry contains the language spec for ODL and a parser to convert ODL to stl
