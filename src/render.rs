@@ -1,12 +1,10 @@
-use std::{num::NonZeroU64, sync::{Arc, RwLock}};
+use std::sync::{Arc, RwLock};
 
-use bytemuck::NoUninit;
 use eframe::{
     egui_wgpu::{self, wgpu}, wgpu::util::DeviceExt,
 };
 use egui::{PointerButton, Pos2, Vec2};
 use egui_wgpu::CallbackTrait;
-use log::info;
 
 use crate::TemplateApp;
 
@@ -178,19 +176,19 @@ impl CameraController {
         let forward_mag = forward.magnitude();
 
         if self.is_rotating {
-            camera.eye = camera.target - (forward + (right * self.speed * self.mouse_offset.0 as f32)).normalize() * forward_mag;
+            camera.eye = camera.target - (forward + (right * self.speed * self.mouse_offset.0)).normalize() * forward_mag;
             let forward = camera.target - camera.eye;
-            camera.eye = camera.target - (forward - (camera.up * self.speed * self.mouse_offset.1 as f32)).normalize() * forward_mag;
+            camera.eye = camera.target - (forward - (camera.up * self.speed * self.mouse_offset.1)).normalize() * forward_mag;
 
             self.mouse_offset = (0.0, 0.0);
         }
 
         if self.is_translating {
-            camera.target -= right * self.tspeed * self.mouse_offset.0 as f32 * forward_mag;
-            camera.target += camera.up * self.tspeed * self.mouse_offset.1 as f32 * forward_mag;
+            camera.target -= right * self.tspeed * self.mouse_offset.0 * forward_mag;
+            camera.target += camera.up * self.tspeed * self.mouse_offset.1 * forward_mag;
 
-            camera.eye -= right * self.tspeed * self.mouse_offset.0 as f32 * forward_mag;
-            camera.eye += camera.up * self.tspeed * self.mouse_offset.1 as f32 * forward_mag;
+            camera.eye -= right * self.tspeed * self.mouse_offset.0 * forward_mag;
+            camera.eye += camera.up * self.tspeed * self.mouse_offset.1 * forward_mag;
 
             self.mouse_offset = (0.0, 0.0);
         }
@@ -304,7 +302,7 @@ pub fn render_object_view (app: &mut TemplateApp, ui: &mut egui::Ui) {
     });
 }
 
-pub fn init_object_View<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwLock<Object>>) -> Option<()> {
+pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwLock<Object>>) -> Option<()> {
     let wgpu_render_state = cc.wgpu_render_state.as_ref().unwrap();
 
     let device = &wgpu_render_state.device;

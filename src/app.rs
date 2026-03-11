@@ -1,7 +1,6 @@
 use std::{f32, sync::{Arc, RwLock}};
 
-use eframe::wgpu::naga::proc::Layouter;
-use egui::text::{LayoutJob, TextWrapping};
+use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, Margin, Stroke, StrokeKind, Style, TextStyle};
 
 use super::render::*;
 
@@ -69,7 +68,7 @@ impl TemplateApp {
         let app = TemplateApp::default();
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
-        init_object_View(cc, app.object.clone());
+        init_object_view(cc, app.object.clone());
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         if let Some(storage) = cc.storage {
@@ -94,32 +93,33 @@ impl eframe::App for TemplateApp {
             render_object_view(self, ui);
         });
         
-        
-        let theme = egui_extras::syntax_highlighting::CodeTheme::from_memory(ctx, &ctx.style());
-        let mut layouter = |ui: &egui::Ui, string: &dyn egui::TextBuffer, wrap_width: f32| {
-            let mut layout_job =  egui_extras::syntax_highlighting::highlight(ui.ctx(), &ctx.style(), &theme, string.as_str(), "".into());
+        let mut layouter = |ui: &egui::Ui, string: &dyn egui::TextBuffer, _wrap_width: f32| {
+            let mut layout_job =  egui::text::LayoutJob::default();
+            layout_job.append(string.as_str(), 0.0, egui::TextFormat {
+                    font_id: FontId::new(25.0, FontFamily::Monospace),
+                    ..Default::default()
+                });
             ui.fonts_mut(|f| f.layout_job(layout_job))
         };
-        
-        // let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
-        //     let mut layout_job = LayoutJob::default();
-        //     //layout_job.wrap.max_width = f32::INFINITY;
-        //     ui.fonts_mut(|f| f.layout_job(layout_job))
-        // };
 
         egui::CentralPanel::default().show(ctx, |ui| {
-                egui::ScrollArea::both().auto_shrink([false; 2]).show(ui, |ui| {
-                    ui.add(
-                        egui::TextEdit::multiline(&mut self.label)
-                            //.desired_width(ui.available_width()-self.text_width-20.0)
-                            //.desired_width(ui.available_width())
-                            .desired_width(f32::INFINITY)
-                            .code_editor()
-                            .layouter(&mut layouter)
-                    );
-                });
-        });
-        
-        
+            egui::Frame::default()
+                .fill(Color32::DARK_GRAY)
+                .stroke(Stroke::new(1.0, Color32::GRAY))
+                .corner_radius(3.0)
+                .inner_margin(Margin::symmetric(2, 2))
+                .show(ui, |ui| {
+                    egui::ScrollArea::both().auto_shrink([false; 2])
+                        .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut self.label)
+                                .layouter(&mut layouter)
+                                .frame(false)
+                                .desired_width(f32::INFINITY)
+                                .code_editor()  
+                        );
+                    });
+            });
+        });   
     }
 }
