@@ -101,7 +101,7 @@ impl Equation {
         let unknown = self.unknown(vars);
 
         if unknown.is_none() {
-            return false;
+            return false; 
         }
 
         let unknown = unknown.unwrap();

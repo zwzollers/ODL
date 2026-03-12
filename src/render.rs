@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use eframe::{
     egui_wgpu::{self, wgpu}, wgpu::util::DeviceExt,
 };
-use egui::{PointerButton, Pos2, Vec2};
+use egui::{Margin, PointerButton, Pos2, Vec2};
 use egui_wgpu::CallbackTrait;
 
 use crate::TemplateApp;
@@ -271,8 +271,13 @@ impl CallbackTrait for ObjectView {
 
 
 pub fn render_object_view (app: &mut TemplateApp, ui: &mut egui::Ui) {
-    egui::Frame::canvas(ui.style()).show(ui, |ui| {
-        let (rect, resp) = ui.allocate_at_least(ui.available_size(), egui::Sense::all());
+
+    egui::Frame::canvas(ui.style())
+        .fill(ui.visuals().text_edit_bg_color())
+        .corner_radius(3.0)
+        .outer_margin(Margin::symmetric(0, 5))
+        .show(ui, |ui| {
+        let (rect, resp) = ui.allocate_exact_size(ui.available_size(), egui::Sense::all());
 
         if resp.hovered() {
             ui.input(|i| {

@@ -1,6 +1,6 @@
 use std::{f32, sync::{Arc, RwLock}};
 
-use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, Margin, Stroke, StrokeKind, Style, TextStyle};
+use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, Label, Margin, Rect, Stroke, StrokeKind, Style, TextStyle, Vec2};
 
 use super::render::*;
 
@@ -87,8 +87,23 @@ impl eframe::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+
+        let width = ctx.content_rect().width();
         
-        egui::SidePanel::right("obj_view").resizable(true).show(ctx, |ui| {
+        egui::SidePanel::right("obj_view")
+            .default_width(width/2.0)
+            .resizable(true)
+            .max_width(width - 200.0)
+            .show(ctx, |ui| {
+            //self.text_width = ui.available_width();
+            render_object_view(self, ui);
+        });
+
+        egui::SidePanel::left("file_explorer")
+            .default_width(width/2.0)
+            .resizable(true)
+            .max_width(width - 200.0)
+            .show(ctx, |ui| {
             //self.text_width = ui.available_width();
             render_object_view(self, ui);
         });
@@ -103,22 +118,36 @@ impl eframe::App for TemplateApp {
         };
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::Frame::default()
-                .fill(Color32::DARK_GRAY)
-                .stroke(Stroke::new(1.0, Color32::GRAY))
-                .corner_radius(3.0)
-                .inner_margin(Margin::symmetric(2, 2))
-                .show(ui, |ui| {
-                    egui::ScrollArea::both().auto_shrink([false; 2])
-                        .show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.label)
-                                .layouter(&mut layouter)
-                                .frame(false)
-                                .desired_width(f32::INFINITY)
-                                .code_editor()  
-                        );
-                    });
+            //egui::widgets::global_theme_preference_buttons(ui);
+
+            egui::TopBottomPanel::bottom("terminal")
+                .resizable(true)
+                .show(ctx, |ui| {
+                    ui.add(Label::new("HELLO"));
+            });
+
+            egui::CentralPanel::default().show(ctx, |ui| {
+                egui::Frame::default()
+                    .stroke(Stroke::new(1.0, Color32::GRAY))
+                    .corner_radius(3.0)
+                    .inner_margin(Margin::symmetric(0, 0))
+                    .show(ui, |ui| {
+
+                        let mut scroll_style = egui::style::ScrollStyle::solid();
+                        scroll_style.foreground_color = false;
+                        
+                        ui.style_mut().spacing.scroll = scroll_style;
+                        egui::ScrollArea::both().auto_shrink([false; 2])
+                            .show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::multiline(&mut self.label)
+                                    .layouter(&mut layouter)
+                                    .frame(false)
+                                    .desired_width(f32::INFINITY)
+                                    .code_editor()  
+                            );
+                        });
+                });
             });
         });   
     }
