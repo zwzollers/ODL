@@ -11,7 +11,7 @@ use crate::TemplateApp;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
-    position: [f32; 3],
+    pub position: [f32; 3],
     color: [f32; 3],
 }
 
@@ -199,7 +199,6 @@ struct ObjectViewResources {
     pub pipeline: wgpu::RenderPipeline,
     pub bind_group: wgpu::BindGroup,
     pub camera_buffer: wgpu::Buffer,
-    pub object: Arc<RwLock<Object>>,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
 }
@@ -207,6 +206,7 @@ struct ObjectViewResources {
 #[derive(Clone, Default)]
 pub struct ObjectView {
     camera: CameraUniform,
+    object: Arc<RwLock<Object>>
 }
 
 impl CallbackTrait for ObjectView {
@@ -220,7 +220,9 @@ impl CallbackTrait for ObjectView {
         ) -> Vec<wgpu::CommandBuffer> {
         let resources: &ObjectViewResources = callback_resources.get().unwrap();
         {
-            let obj = resources.object.read().unwrap();
+            let obj = self.object.read().unwrap();
+            
+            println!("{:?}", obj.verticies[0]);
             
             queue.write_buffer(
                 &resources.camera_buffer,
@@ -258,7 +260,7 @@ impl CallbackTrait for ObjectView {
         ) {
         let resources: &ObjectViewResources = callback_resources.get().unwrap();
         {
-            let obj = resources.object.read().unwrap();
+            let obj = self.object.read().unwrap();
             let num_indicies = obj.indicies.len();
             render_pass.set_pipeline(&resources.pipeline);
             render_pass.set_bind_group(0, &resources.bind_group, &[]);
@@ -286,11 +288,21 @@ pub fn render_object_view (app: &mut TemplateApp, ui: &mut egui::Ui) {
                         egui::Event::MouseWheel { delta, ..} => app.camera_controller.handle_mouse_scroll(*delta),
                         egui::Event::PointerMoved(pos) => app.camera_controller.handle_mouse_move(*pos),
                         egui::Event::PointerButton { button, pressed, ..} => app.camera_controller.handle_mouse_click(*button, *pressed),
+                        egui::Event::Key { key, pressed, ..} => match key {
+                            egui::Key::ArrowUp => {
+                                let mut obj = app.object.write().unwrap();
+                                obj.verticies[0].position[0] += 0.1;
+                                println!("{:?}", obj.verticies[0]);
+                            }
+                            _ => ()
+                        }
                         _ => ()
                     };
                 }
             });
         }
+        
+        app.camera.aspect = rect.width() / rect.height();
 
         app.camera_controller.update_camera(&mut app.camera);
 
@@ -299,6 +311,7 @@ pub fn render_object_view (app: &mut TemplateApp, ui: &mut egui::Ui) {
 
         let object_view = ObjectView {
             camera: camera_uniform,
+            object: app.object.clone()
         };
 
         let callback = egui_wgpu::Callback::new_paint_callback(rect, object_view);
@@ -407,7 +420,6 @@ pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwL
             pipeline,
             bind_group,
             camera_buffer,
-            object,
             vertex_buffer,
             index_buffer,
     });
@@ -418,7 +430,7 @@ pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwL
 
 #[derive(Default)]
 pub struct Object {
-    verticies: Vec<Vertex>,
+    pub verticies: Vec<Vertex>,
     indicies: Vec<u16>
 }
 
@@ -430,7 +442,7 @@ impl Object {
                 Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5] }, // B
                 Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5] }, // C
                 Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5] }, // D
-                Vertex { position: [0.44147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5] }, // E
+                Vertex { position: [0.64147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5] }, // E
             ],
             indicies: vec![
                 0, 1, 4,

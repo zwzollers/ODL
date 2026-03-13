@@ -20,7 +20,7 @@ pub struct TemplateApp {
     object_view: ObjectView,
 
     #[serde(skip)] // This how you opt-out of serialization of a field
-    object: Arc<RwLock<Object>>,
+    pub object: Arc<RwLock<Object>>,
 
     #[serde(skip)] // This how you opt-out of serialization of a field
     pub camera:Camera,
@@ -68,7 +68,7 @@ impl TemplateApp {
         let app = TemplateApp::default();
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
-        init_object_view(cc, app.object.clone());
+        init_object_view(cc, Arc::clone(&app.object));
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         if let Some(storage) = cc.storage {
@@ -99,14 +99,14 @@ impl eframe::App for TemplateApp {
             render_object_view(self, ui);
         });
 
-        egui::SidePanel::left("file_explorer")
-            .default_width(width/2.0)
-            .resizable(true)
-            .max_width(width - 200.0)
-            .show(ctx, |ui| {
-            //self.text_width = ui.available_width();
-            render_object_view(self, ui);
-        });
+        // egui::SidePanel::left("file_explorer")
+        //     .default_width(width/2.0)
+        //     .resizable(true)
+        //     .max_width(width - 200.0)
+        //     .show(ctx, |ui| {
+        //     //self.text_width = ui.available_width();
+        //     render_object_view(self, ui);
+        // });
         
         let mut layouter = |ui: &egui::Ui, string: &dyn egui::TextBuffer, _wrap_width: f32| {
             let mut layout_job =  egui::text::LayoutJob::default();
