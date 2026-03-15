@@ -4,10 +4,12 @@ use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, Label, Margin
 
 use super::render::*;
 
+use super::stl::*;
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
-pub struct TemplateApp {
+pub struct App {
     // Example stuff:
     label: String,
     
@@ -29,7 +31,7 @@ pub struct TemplateApp {
     pub camera_controller: CameraController,
 }
 
-impl Default for TemplateApp {
+impl Default for App {
     fn default() -> Self {
 
         let camera = Camera {
@@ -54,18 +56,18 @@ impl Default for TemplateApp {
             text_width: 0.0,
             value: 2.7,
             object_view: ObjectView::default(),
-            object: Arc::new(RwLock::new(Object::test())),
+            object: Arc::new(RwLock::new(Object::from(STL::try_from_bytes(include_bytes!("../utah_teapot.stl")).unwrap()))),
             camera,
             camera_controller,
         }
     }
 }
 
-impl TemplateApp {
+impl App {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
 
-        let app = TemplateApp::default();
+        let app = App::default();
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
         init_object_view(cc, Arc::clone(&app.object));
@@ -79,7 +81,7 @@ impl TemplateApp {
     }
 }
 
-impl eframe::App for TemplateApp {
+impl eframe::App for App {
     /// Called by the framework to save state before shutdown.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);

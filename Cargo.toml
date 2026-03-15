@@ -28,6 +28,7 @@ bytemuck = { version = "1.24", features = [ "derive" ] }
 serde = { version = "1.0.219", features = ["derive"] }
 cgmath = "0.18.0"
 egui_extras = "0.33.3"
+rand = "0.10.0"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

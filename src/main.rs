@@ -10,12 +10,14 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([400.0, 300.0])
             .with_min_inner_size([300.0, 220.0]),
+        depth_buffer: 32,
+        #[cfg(feature = "wgpu")] renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
     eframe::run_native(
         "eframe template",
         native_options,
-        Box::new(|cc| Ok(Box::new(eframe_template::TemplateApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(eframe_template::App::new(cc)))),
     )
 }
 
@@ -27,7 +29,10 @@ fn main() {
     // Redirect `log` message to `console.log` and friends:
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
 
-    let web_options = eframe::WebOptions::default();
+    let web_options = eframe::WebOptions {
+        depth_buffer: 1,
+        //..Default::default(),
+    };
 
     wasm_bindgen_futures::spawn_local(async {
         let document = web_sys::window()
@@ -45,7 +50,7 @@ fn main() {
             .start(
                 canvas,
                 web_options,
-                Box::new(|cc| Ok(Box::new(eframe_template::TemplateApp::new(cc)))),
+                Box::new(|cc| Ok(Box::new(eframe_template::App::new(cc)))),
             )
             .await;
 

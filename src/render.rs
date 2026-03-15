@@ -1,12 +1,16 @@
 use std::sync::{Arc, RwLock};
 
 use eframe::{
-    egui_wgpu::{self, wgpu}, wgpu::util::DeviceExt,
+    egui_wgpu::{self, wgpu}, wgpu::{BufferDescriptor, Device, FilterMode, util::DeviceExt, wgc::id::markers::CommandBuffer, wgt::SamplerDescriptor},
 };
 use egui::{Margin, PointerButton, Pos2, Vec2};
 use egui_wgpu::CallbackTrait;
 
-use crate::TemplateApp;
+use rand::prelude::*;
+
+use crate::App;
+
+use super::stl::*;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -201,12 +205,15 @@ struct ObjectViewResources {
     pub camera_buffer: wgpu::Buffer,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
+    pub depth_texture: Texture,
+    pub size: [u32; 2],
 }
 
 #[derive(Clone, Default)]
 pub struct ObjectView {
     camera: CameraUniform,
-    object: Arc<RwLock<Object>>
+    object: Arc<RwLock<Object>>,
+    size: [u32; 2],
 }
 
 impl CallbackTrait for ObjectView {
@@ -218,11 +225,9 @@ impl CallbackTrait for ObjectView {
             _egui_encoder: &mut wgpu::CommandEncoder,
             callback_resources: &mut egui_wgpu::CallbackResources,
         ) -> Vec<wgpu::CommandBuffer> {
-        let resources: &ObjectViewResources = callback_resources.get().unwrap();
+        let mut resources: &mut ObjectViewResources = callback_resources.get_mut().unwrap();
         {
             let obj = self.object.read().unwrap();
-            
-            println!("{:?}", obj.verticies[0]);
             
             queue.write_buffer(
                 &resources.camera_buffer,
@@ -245,11 +250,17 @@ impl CallbackTrait for ObjectView {
     }
     fn finish_prepare(
             &self,
-            _device: &wgpu::Device,
+            device: &wgpu::Device,
             _queue: &wgpu::Queue,
-            _egui_encoder: &mut wgpu::CommandEncoder,
-            _callback_resources: &mut egui_wgpu::CallbackResources,
+            egui_encoder: &mut wgpu::CommandEncoder,
+            callback_resources: &mut egui_wgpu::CallbackResources,
         ) -> Vec<wgpu::CommandBuffer> {
+        let mut resources: &mut ObjectViewResources = callback_resources.get_mut().unwrap();
+        
+        if resources.size != self.size {
+            resources.size = self.size;
+            resources.depth_texture = Texture::create_depth_texture(&device, resources.size, "depth_texture");
+        }
         Vec::new()
     }
     fn paint(
@@ -259,6 +270,7 @@ impl CallbackTrait for ObjectView {
             callback_resources: &egui_wgpu::CallbackResources,
         ) {
         let resources: &ObjectViewResources = callback_resources.get().unwrap();
+        
         {
             let obj = self.object.read().unwrap();
             let num_indicies = obj.indicies.len();
@@ -272,7 +284,7 @@ impl CallbackTrait for ObjectView {
 }
 
 
-pub fn render_object_view (app: &mut TemplateApp, ui: &mut egui::Ui) {
+pub fn render_object_view (app: &mut App, ui: &mut egui::Ui) {
 
     egui::Frame::canvas(ui.style())
         .fill(ui.visuals().text_edit_bg_color())
@@ -288,14 +300,6 @@ pub fn render_object_view (app: &mut TemplateApp, ui: &mut egui::Ui) {
                         egui::Event::MouseWheel { delta, ..} => app.camera_controller.handle_mouse_scroll(*delta),
                         egui::Event::PointerMoved(pos) => app.camera_controller.handle_mouse_move(*pos),
                         egui::Event::PointerButton { button, pressed, ..} => app.camera_controller.handle_mouse_click(*button, *pressed),
-                        egui::Event::Key { key, pressed, ..} => match key {
-                            egui::Key::ArrowUp => {
-                                let mut obj = app.object.write().unwrap();
-                                obj.verticies[0].position[0] += 0.1;
-                                println!("{:?}", obj.verticies[0]);
-                            }
-                            _ => ()
-                        }
                         _ => ()
                     };
                 }
@@ -311,7 +315,8 @@ pub fn render_object_view (app: &mut TemplateApp, ui: &mut egui::Ui) {
 
         let object_view = ObjectView {
             camera: camera_uniform,
-            object: app.object.clone()
+            object: app.object.clone(),
+            size: [rect.size()[0] as u32, rect.size()[1] as u32],
         };
 
         let callback = egui_wgpu::Callback::new_paint_callback(rect, object_view);
@@ -367,6 +372,8 @@ pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwL
             resource: camera_buffer.as_entire_binding()
         }],
     });
+    
+    let depth_texture = Texture::create_depth_texture(&device, [0,0], "depth_texture");
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("custom3d"),
@@ -390,28 +397,36 @@ pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwL
             compilation_options: wgpu::PipelineCompilationOptions::default(),
         }),
         primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: wgpu::TextureFormat::Depth32Float,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less, // 1.
+            stencil: wgpu::StencilState::default(), // 2.
+            bias: wgpu::DepthBiasState::default(),
+        }),
         multisample: wgpu::MultisampleState::default(),
         multiview: None,
         cache: None
     });
 
-    let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
+    let vertex_buffer = device.create_buffer(
+            &BufferDescriptor {
                 label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(VERTICES),
+                size: 10000*4*3,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
             }
         );
-    let index_buffer = device.create_buffer_init(
-        &wgpu::util::BufferInitDescriptor {
+    let index_buffer = device.create_buffer(
+        &BufferDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
+            size: 10000*4*3,
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         }
     );
-
     
+
     wgpu_render_state
         .renderer
         .write()
@@ -422,16 +437,47 @@ pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwL
             camera_buffer,
             vertex_buffer,
             index_buffer,
+            depth_texture,
+            size: [0,0],
     });
 
     Some(())
-
 }
 
 #[derive(Default)]
 pub struct Object {
     pub verticies: Vec<Vertex>,
-    indicies: Vec<u16>
+    pub indicies: Vec<u16>,
+}
+
+impl From<STL> for Object {
+    fn from(value: STL) -> Self {
+        let mut verticies: Vec<Vertex> = Vec::new();
+        let mut indicies: Vec<u16> = Vec::new();
+        
+        let mut rng = rand::rng();
+        
+        for tri in value.triangles {
+            for point in tri.points {
+                let index = match verticies.iter().position(|x| x.position == point) {
+                    None => {
+                        verticies.push( Vertex { 
+                            position: (point), 
+                            color: ([rng.random(),rng.random(),rng.random()]) 
+                        });
+                       verticies.len()-1 
+                    }
+                    Some(index) => {
+                        index
+                    }
+                };
+                
+                indicies.push(index as u16);
+            }
+        }
+        
+        Object { verticies, indicies }
+    }
 }
 
 impl Object {
@@ -449,6 +495,60 @@ impl Object {
                 1, 2, 4,
                 2, 3, 4, 0
             ]
+        }
+    }
+}
+
+pub struct Texture {
+    #[allow(unused)]
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub sampler: wgpu::Sampler,
+}
+
+impl Texture {
+    pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+    #[allow(unused)]
+    pub fn create_depth_texture(
+        device: &wgpu::Device,
+        size: [u32; 2],
+        label: &str,
+    ) -> Self {
+        let size = wgpu::Extent3d {
+            width: size[0].max(1),
+            height: size[1].max(1),
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some(label),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Self::DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[Self::DEPTH_FORMAT],
+        };
+        let texture = device.create_texture(&desc);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            ..Default::default()
+        });
+
+        Self {
+            texture,
+            view,
+            sampler,
         }
     }
 }
