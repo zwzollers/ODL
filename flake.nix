@@ -16,9 +16,11 @@
         devShells.default = mkShell rec {
           buildInputs = [
             # Rust
-            rust-bin.stable.latest.default
+            (rust-bin.stable.latest.default.override {
+              extensions = [ "rust-src" ];
+              targets = [ "wasm32-unknown-unknown" ];
+            })
             trunk
-            rustup
 
             # misc. libraries
             openssl
@@ -33,10 +35,10 @@
             wayland
 
             # x11 libraries
-            xorg.libXcursor
-            xorg.libXrandr
-            xorg.libXi
-            xorg.libX11
+            libXcursor
+            libXrandr
+            libXi
+            libX11
 
           ];
 
