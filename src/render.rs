@@ -1,5 +1,6 @@
 use std::sync::{Arc, RwLock};
 
+use cgmath::ElementWise;
 use eframe::{
     egui_wgpu::{self, wgpu}, wgpu::{BufferDescriptor, Device, FilterMode, util::DeviceExt, wgc::id::markers::CommandBuffer, wgt::SamplerDescriptor},
 };
@@ -131,12 +132,18 @@ impl CameraController {
             is_translating: false,
         }
     }
+    
+    pub fn clear_clicked(&mut self) {
+        self.is_rotating = false;
+        self.is_translating = false;
+    }
 
     // fn handle_key(&mut self, code: KeyCode, is_pressed: bool) -> bool {
     //     true
     // }
 
     pub fn handle_mouse_click(&mut self, code: PointerButton, is_pressed: bool) {
+        self.clear_clicked();
         match code {
             PointerButton::Middle => {
                 self.is_rotating = is_pressed;
@@ -305,6 +312,9 @@ pub fn render_object_view (app: &mut App, ui: &mut egui::Ui) {
                 }
             });
         }
+        else {
+            app.camera_controller.clear_clicked();
+        }
         
         app.camera.aspect = rect.width() / rect.height();
 
@@ -420,13 +430,12 @@ pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwL
     let index_buffer = device.create_buffer(
         &BufferDescriptor {
             label: Some("Index Buffer"),
-            size: 10000*4*3,
+            size: 10000*2*3,
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         }
     );
     
-
     wgpu_render_state
         .renderer
         .write()
@@ -477,25 +486,6 @@ impl From<STL> for Object {
         }
         
         Object { verticies, indicies }
-    }
-}
-
-impl Object {
-    pub fn test() -> Self {
-        Self {
-            verticies: vec![
-                Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [1.5, 0.0, 0.5] }, // A
-                Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5] }, // B
-                Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5] }, // C
-                Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5] }, // D
-                Vertex { position: [0.64147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5] }, // E
-            ],
-            indicies: vec![
-                0, 1, 4,
-                1, 2, 4,
-                2, 3, 4, 0
-            ]
-        }
     }
 }
 
