@@ -1,10 +1,12 @@
 use std::{f32, sync::{Arc, RwLock}};
 
-use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, Label, Margin, Rect, Stroke, StrokeKind, Style, TextStyle, Vec2};
+use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, Label, Margin, Rect, Stroke, StrokeKind, Style, TextBuffer, TextStyle, Vec2};
 
 use super::render::*;
 
 use super::stl::*;
+
+use super::tokenizer::*;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -113,9 +115,14 @@ impl eframe::App for App {
         let mut layouter = |ui: &egui::Ui, string: &dyn egui::TextBuffer, _wrap_width: f32| {
             let mut layout_job =  egui::text::LayoutJob::default();
             layout_job.append(string.as_str(), 0.0, egui::TextFormat {
-                    font_id: FontId::new(25.0, FontFamily::Monospace),
-                    ..Default::default()
-                });
+                font_id: FontId::new(25.0, FontFamily::Monospace),
+                ..Default::default()
+            });
+            layout_job.append(&string.as_str()[0..5], 0.0, egui::TextFormat {
+                font_id: FontId::new(25.0, FontFamily::Monospace),
+                color: Color32::GOLD,
+                ..Default::default()
+            });
             ui.fonts_mut(|f| f.layout_job(layout_job))
         };
 
@@ -127,6 +134,8 @@ impl eframe::App for App {
                 .show(ctx, |ui| {
                     ui.add(Label::new("HELLO"));
             });
+            
+            println!("{:#?}", Tokens::try_from(self.label.as_str()));
 
             egui::CentralPanel::default().show(ctx, |ui| {
                 egui::Frame::default()
