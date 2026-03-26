@@ -7,6 +7,7 @@ use eframe::{
 use egui::{Margin, PointerButton, Pos2, Vec2};
 use egui_wgpu::CallbackTrait;
 
+use opencascade::mesh::Mesh;
 use rand::prelude::*;
 
 use crate::App;
@@ -484,6 +485,23 @@ impl From<STL> for Object {
                 indicies.push(index as u16);
             }
         }
+        
+        Object { verticies, indicies }
+    }
+}
+
+impl From<Mesh> for Object {
+    fn from(value: Mesh) -> Self {
+        
+        let mut rng = rand::rng();
+        
+        let verticies: Vec<Vertex> = value.vertices.iter().map(|v| 
+            Vertex{
+                position: [v.x as f32,v.y as f32, v.z as f32], 
+                color: ([rng.random(),rng.random(),rng.random()]) 
+            }
+        ).collect();
+        let indicies: Vec<u16> = value.indices.iter().map(|i| *i as u16).collect();
         
         Object { verticies, indicies }
     }

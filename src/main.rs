@@ -6,6 +6,8 @@
 fn main() -> eframe::Result {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
+    let mesh = ODL::cascade::test_cascade();    
+    
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([400.0, 300.0])
@@ -17,7 +19,7 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "eframe template",
         native_options,
-        Box::new(|cc| Ok(Box::new(eframe_template::App::new(cc)))),
+        Box::new(|cc| Ok(Box::new(ODL::App::new(cc)))),
     )
 }
 

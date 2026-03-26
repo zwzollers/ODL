@@ -8,6 +8,8 @@ use super::stl::*;
 
 use super::tokenizer::*;
 
+use super::cascade::*;
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -58,7 +60,8 @@ impl Default for App {
             text_width: 0.0,
             value: 2.7,
             object_view: ObjectView::default(),
-            object: Arc::new(RwLock::new(Object::from(STL::try_from_bytes(include_bytes!("../utah_teapot.stl")).unwrap()))),
+            //object: Arc::new(RwLock::new(Object::from(STL::try_from_bytes(include_bytes!("../test_stl/test.stl")).unwrap()))),
+            object: Arc::new(RwLock::new(Object::from(test_cascade()))),
             camera,
             camera_controller,
         }
@@ -118,11 +121,6 @@ impl eframe::App for App {
                 font_id: FontId::new(25.0, FontFamily::Monospace),
                 ..Default::default()
             });
-            layout_job.append(&string.as_str()[0..5], 0.0, egui::TextFormat {
-                font_id: FontId::new(25.0, FontFamily::Monospace),
-                color: Color32::GOLD,
-                ..Default::default()
-            });
             ui.fonts_mut(|f| f.layout_job(layout_job))
         };
 
@@ -135,7 +133,7 @@ impl eframe::App for App {
                     ui.add(Label::new("HELLO"));
             });
             
-            println!("{:#?}", Tokens::try_from(self.label.as_str()));
+            //println!("{:#?}", Tokens::try_from(self.label.as_str()));
 
             egui::CentralPanel::default().show(ctx, |ui| {
                 egui::Frame::default()

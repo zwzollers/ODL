@@ -39,8 +39,14 @@
             libXrandr
             libXi
             libX11
-
+            
+            cmake
+            gcc
           ];
+          env = {
+            #fix old cmake version in opencascade
+            CMAKE_POLICY_VERSION_MINIMUM="3.5";
+          };
 
           LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
         };

@@ -75,8 +75,8 @@ impl TryFrom<&str> for Tokens {
                 TokenizerState::Idle => {
                     start = i;
                     match c {
-                        '0'..'9' => state = TokenizerState::Number,
-                        '_' | 'A'..'Z' | 'a'..'z' => state = TokenizerState::Name,
+                        '0'..='9' => state = TokenizerState::Number,
+                        '_' | 'A'..='Z' | 'a'..='z' => state = TokenizerState::Name,
                         '/' => state = TokenizerState::CommentStart,
                         '{' => tokens.push(Token::new(start, i, TokenKind::SymbolCurlyBracketOpen)),
                         '}' => tokens.push(Token::new(start, i, TokenKind::SymbolCurlyBracketClose)),
