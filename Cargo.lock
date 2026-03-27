@@ -3,27 +3,6 @@
 version = 4
 
 [[package]]
-name = "ODL"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "cgmath",
- "clap",
- "eframe",
- "egui",
- "egui-wgpu",
- "egui_extras",
- "env_logger",
- "glam",
- "log",
- "opencascade",
- "rand 0.10.0",
- "serde",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2602,6 +2581,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1b3fb218c80b037a612cc4ec325a426a1705d0b2e25b207f7e3db22556ded5f"
 dependencies = [
  "cmake",
+]
+
+[[package]]
+name = "odl"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "cgmath",
+ "clap",
+ "eframe",
+ "egui",
+ "egui-wgpu",
+ "egui_extras",
+ "env_logger",
+ "glam",
+ "log",
+ "opencascade",
+ "rand 0.10.0",
+ "serde",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
