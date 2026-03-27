@@ -1,8 +1,8 @@
 use std::sync::{Arc, RwLock};
 
-use cgmath::ElementWise;
 use eframe::{
-    egui_wgpu::{self, wgpu}, wgpu::{BufferDescriptor, Device, FilterMode, util::DeviceExt, wgc::id::markers::CommandBuffer, wgt::SamplerDescriptor},
+    egui_wgpu::{self, wgpu},
+    wgpu::{BufferDescriptor, util::DeviceExt},
 };
 use egui::{Margin, PointerButton, Pos2, Vec2};
 use egui_wgpu::CallbackTrait;
@@ -16,9 +16,9 @@ use super::stl::*;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
+pub struct Vertex {
     pub position: [f32; 3],
-    color: [f32; 3],
+    pub color: [f32; 3],
 }
 
 impl Vertex {
@@ -36,26 +36,13 @@ impl Vertex {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
-                }
-            ]
+                },
+            ],
         }
     }
 }
 
-const VERTICES: &[Vertex] = &[
-    Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5] }, // A
-    Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5] }, // B
-    Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5] }, // C
-    Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5] }, // D
-    Vertex { position: [0.44147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5] }, // E
-];
-
-const INDICES: &[u16] = &[
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4,
-];
-
+#[derive(PartialEq, Clone)]
 pub struct Camera {
     pub eye: cgmath::Point3<f32>,
     pub target: cgmath::Point3<f32>,
@@ -133,15 +120,11 @@ impl CameraController {
             is_translating: false,
         }
     }
-    
+
     pub fn clear_clicked(&mut self) {
         self.is_rotating = false;
         self.is_translating = false;
     }
-
-    // fn handle_key(&mut self, code: KeyCode, is_pressed: bool) -> bool {
-    //     true
-    // }
 
     pub fn handle_mouse_click(&mut self, code: PointerButton, is_pressed: bool) {
         self.clear_clicked();
@@ -154,43 +137,50 @@ impl CameraController {
                 self.is_translating = is_pressed;
                 self.mouse_offset = (0.0, 0.0);
             }
-            _ => ()
+            _ => (),
         }
     }
-    
+
     pub fn handle_mouse_scroll(&mut self, delta: Vec2) {
-        
-            self.mouse_scroll_delta += delta.y.clamp(-1.0, 1.0);
+        self.mouse_scroll_delta += delta.y.clamp(-1.0, 1.0);
     }
 
     pub fn handle_mouse_move(&mut self, pos: Pos2) {
-        let offset = Pos2::new(pos.x - self.mouse_position.x, pos.y - self.mouse_position.y); 
+        let offset = Pos2::new(pos.x - self.mouse_position.x, pos.y - self.mouse_position.y);
 
-        self.mouse_offset = (self.mouse_offset.0 + offset.x, self.mouse_offset.1 + offset.y);
+        self.mouse_offset = (
+            self.mouse_offset.0 + offset.x,
+            self.mouse_offset.1 + offset.y,
+        );
 
         self.mouse_position = pos;
     }
 
-    pub fn update_camera(&mut self, camera: &mut Camera) {
+    pub fn update_camera(&mut self, camera: &mut Camera) -> bool {
+        let prev_camera = camera.clone();
+
         use cgmath::InnerSpace;
         let forward = camera.target - camera.eye;
         let forward_norm = forward.normalize();
         let forward_mag = forward.magnitude();
-        
+
         camera.eye += forward_norm * self.sspeed * self.mouse_scroll_delta * forward_mag;
-        
+
         self.mouse_scroll_delta = 0.0;
 
         let right = forward_norm.cross(camera.up);
 
         // Redo radius calc in case the forward/backward is pressed.
-        
+
         let forward_mag = forward.magnitude();
 
         if self.is_rotating {
-            camera.eye = camera.target - (forward + (right * self.speed * self.mouse_offset.0)).normalize() * forward_mag;
+            camera.eye = camera.target
+                - (forward + (right * self.speed * self.mouse_offset.0)).normalize() * forward_mag;
             let forward = camera.target - camera.eye;
-            camera.eye = camera.target - (forward - (camera.up * self.speed * self.mouse_offset.1)).normalize() * forward_mag;
+            camera.eye = camera.target
+                - (forward - (camera.up * self.speed * self.mouse_offset.1)).normalize()
+                    * forward_mag;
 
             self.mouse_offset = (0.0, 0.0);
         }
@@ -204,6 +194,8 @@ impl CameraController {
 
             self.mouse_offset = (0.0, 0.0);
         }
+
+        *camera != prev_camera
     }
 }
 
@@ -220,123 +212,160 @@ struct ObjectViewResources {
 #[derive(Clone, Default)]
 pub struct ObjectView {
     camera: CameraUniform,
+    camera_moved: bool,
     object: Arc<RwLock<Object>>,
+    object_changed: bool,
     size: [u32; 2],
 }
 
 impl CallbackTrait for ObjectView {
     fn prepare(
-            &self,
-            _device: &wgpu::Device,
-            queue: &wgpu::Queue,
-            _screen_descriptor: &egui_wgpu::ScreenDescriptor,
-            _egui_encoder: &mut wgpu::CommandEncoder,
-            callback_resources: &mut egui_wgpu::CallbackResources,
-        ) -> Vec<wgpu::CommandBuffer> {
-        let mut resources: &mut ObjectViewResources = callback_resources.get_mut().unwrap();
-        {
-            let obj = self.object.read().unwrap();
-            
-            queue.write_buffer(
-                &resources.camera_buffer,
-                0,
-                bytemuck::cast_slice(&[self.camera]),
-            );
-            queue.write_buffer(
-                &resources.vertex_buffer,
-                0,
-                bytemuck::cast_slice(obj.verticies.as_slice()),
-            );
-            queue.write_buffer(
-                &resources.index_buffer,
-                0,
-                bytemuck::cast_slice(obj.indicies.as_slice()),
-            );
-        }
-        
+        &self,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+        _screen_descriptor: &egui_wgpu::ScreenDescriptor,
+        _egui_encoder: &mut wgpu::CommandEncoder,
+        _callback_resources: &mut egui_wgpu::CallbackResources,
+    ) -> Vec<wgpu::CommandBuffer> {
         Vec::new()
     }
     fn finish_prepare(
-            &self,
-            device: &wgpu::Device,
-            _queue: &wgpu::Queue,
-            egui_encoder: &mut wgpu::CommandEncoder,
-            callback_resources: &mut egui_wgpu::CallbackResources,
-        ) -> Vec<wgpu::CommandBuffer> {
-        let mut resources: &mut ObjectViewResources = callback_resources.get_mut().unwrap();
-        
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        _egui_encoder: &mut wgpu::CommandEncoder,
+        callback_resources: &mut egui_wgpu::CallbackResources,
+    ) -> Vec<wgpu::CommandBuffer> {
+        let resources: &mut ObjectViewResources = callback_resources.get_mut().unwrap();
+
+        {
+            let obj = self.object.read().unwrap();
+            let (idx_size, vtx_size) = (
+                (obj.indicies.len() * 2) as u64,
+                (obj.verticies.len() * 4 * 6) as u64,
+            );
+
+            if resources.index_buffer.size() < idx_size {
+                resources.index_buffer = device.create_buffer(&BufferDescriptor {
+                    label: Some("Index Buffer"),
+                    size: idx_size,
+                    usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+            }
+
+            if resources.vertex_buffer.size() < vtx_size {
+                resources.vertex_buffer = device.create_buffer(&BufferDescriptor {
+                    label: Some("Vertex Buffer"),
+                    size: vtx_size,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+            }
+
+            if self.camera_moved {
+                queue.write_buffer(
+                    &resources.camera_buffer,
+                    0,
+                    bytemuck::cast_slice(&[self.camera]),
+                );
+            }
+
+            if self.object_changed {
+                queue.write_buffer(
+                    &resources.vertex_buffer,
+                    0,
+                    bytemuck::cast_slice(obj.verticies.as_slice()),
+                );
+                queue.write_buffer(
+                    &resources.index_buffer,
+                    0,
+                    bytemuck::cast_slice(obj.indicies.as_slice()),
+                );
+            }
+        }
+
         if resources.size != self.size {
             resources.size = self.size;
-            resources.depth_texture = Texture::create_depth_texture(&device, resources.size, "depth_texture");
+            resources.depth_texture =
+                Texture::create_depth_texture(&device, resources.size, "depth_texture");
         }
         Vec::new()
     }
     fn paint(
-            &self,
-            _info: egui::PaintCallbackInfo,
-            render_pass: &mut wgpu::RenderPass<'static>,
-            callback_resources: &egui_wgpu::CallbackResources,
-        ) {
+        &self,
+        _info: egui::PaintCallbackInfo,
+        render_pass: &mut wgpu::RenderPass<'static>,
+        callback_resources: &egui_wgpu::CallbackResources,
+    ) {
         let resources: &ObjectViewResources = callback_resources.get().unwrap();
-        
+
         {
             let obj = self.object.read().unwrap();
             let num_indicies = obj.indicies.len();
             render_pass.set_pipeline(&resources.pipeline);
             render_pass.set_bind_group(0, &resources.bind_group, &[]);
             render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass
+                .set_index_buffer(resources.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..(num_indicies as u32), 0, 0..1); // 3.
         }
     }
 }
 
-
-pub fn render_object_view (app: &mut App, ui: &mut egui::Ui) {
-
+pub fn render_object_view(app: &mut App, ui: &mut egui::Ui, object_changed: bool) {
     egui::Frame::canvas(ui.style())
         .fill(ui.visuals().text_edit_bg_color())
         .corner_radius(3.0)
         .outer_margin(Margin::symmetric(0, 5))
         .show(ui, |ui| {
-        let (rect, resp) = ui.allocate_exact_size(ui.available_size(), egui::Sense::all());
+            let (rect, resp) = ui.allocate_exact_size(ui.available_size(), egui::Sense::all());
 
-        if resp.hovered() {
-            ui.input(|i| {
-                for event in &i.events {
-                    match event { 
-                        egui::Event::MouseWheel { delta, ..} => app.camera_controller.handle_mouse_scroll(*delta),
-                        egui::Event::PointerMoved(pos) => app.camera_controller.handle_mouse_move(*pos),
-                        egui::Event::PointerButton { button, pressed, ..} => app.camera_controller.handle_mouse_click(*button, *pressed),
-                        _ => ()
-                    };
-                }
-            });
-        }
-        else {
-            app.camera_controller.clear_clicked();
-        }
-        
-        app.camera.aspect = rect.width() / rect.height();
+            if resp.hovered() {
+                ui.input(|i| {
+                    for event in &i.events {
+                        match event {
+                            egui::Event::MouseWheel { delta, .. } => {
+                                app.camera_controller.handle_mouse_scroll(*delta)
+                            }
+                            egui::Event::PointerMoved(pos) => {
+                                app.camera_controller.handle_mouse_move(*pos)
+                            }
+                            egui::Event::PointerButton {
+                                button, pressed, ..
+                            } => app.camera_controller.handle_mouse_click(*button, *pressed),
+                            _ => (),
+                        };
+                    }
+                });
+            } else {
+                app.camera_controller.clear_clicked();
+            }
 
-        app.camera_controller.update_camera(&mut app.camera);
+            let new_aspect = rect.width() / rect.height();
 
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&app.camera);
+            let camera_moved = app.camera_controller.update_camera(&mut app.camera);
 
-        let object_view = ObjectView {
-            camera: camera_uniform,
-            object: app.object.clone(),
-            size: [rect.size()[0] as u32, rect.size()[1] as u32],
-        };
+            let mut camera_uniform = CameraUniform::new();
+            camera_uniform.update_view_proj(&app.camera);
 
-        let callback = egui_wgpu::Callback::new_paint_callback(rect, object_view);
-        
-        ui.painter().add(callback);
-    });
+            let object_view = ObjectView {
+                camera: camera_uniform,
+                camera_moved: camera_moved || app.camera.aspect != new_aspect,
+                object: app.object.clone(),
+                object_changed,
+                size: [rect.size()[0] as u32, rect.size()[1] as u32],
+            };
+
+            app.camera.aspect = new_aspect;
+
+            let callback = egui_wgpu::Callback::new_paint_callback(rect, object_view);
+
+            ui.painter().add(callback);
+        });
 }
 
-pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwLock<Object>>) -> Option<()> {
+pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>) -> Option<()> {
     let wgpu_render_state = cc.wgpu_render_state.as_ref().unwrap();
 
     let device = &wgpu_render_state.device;
@@ -346,20 +375,11 @@ pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwL
         source: wgpu::ShaderSource::Wgsl(include_str!("test.wgsl").into()),
     });
 
-    // let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-    //     label: Some("custom3d"),
-    //     contents: bytemuck::cast_slice(&[0.0_f32; 4]), // 16 bytes aligned!
-    //     usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
-    // });
-
-    let camera_buffer = device.create_buffer_init(
-        &wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Buffer"),
-            contents: bytemuck::cast_slice(&[[[0.0_f32; 4]; 4]]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        }
-    );
-
+    let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Camera Buffer"),
+        contents: bytemuck::cast_slice(&[[[0.0_f32; 4]; 4]]),
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
 
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("obj"),
@@ -380,11 +400,11 @@ pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwL
         layout: &bind_group_layout,
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
-            resource: camera_buffer.as_entire_binding()
+            resource: camera_buffer.as_entire_binding(),
         }],
     });
-    
-    let depth_texture = Texture::create_depth_texture(&device, [0,0], "depth_texture");
+
+    let depth_texture = Texture::create_depth_texture(&device, [0, 0], "depth_texture");
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("custom3d"),
@@ -412,31 +432,27 @@ pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwL
             format: wgpu::TextureFormat::Depth32Float,
             depth_write_enabled: true,
             depth_compare: wgpu::CompareFunction::Less, // 1.
-            stencil: wgpu::StencilState::default(), // 2.
+            stencil: wgpu::StencilState::default(),     // 2.
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState::default(),
         multiview: None,
-        cache: None
+        cache: None,
     });
 
-    let vertex_buffer = device.create_buffer(
-            &BufferDescriptor {
-                label: Some("Vertex Buffer"),
-                size: 10000*4*3,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }
-        );
-    let index_buffer = device.create_buffer(
-        &BufferDescriptor {
-            label: Some("Index Buffer"),
-            size: 10000*2*3,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        }
-    );
-    
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("Vertex Buffer"),
+        size: 10000 * 4 * 6,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let index_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("Index Buffer"),
+        size: 10000 * 2 * 3,
+        usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
     wgpu_render_state
         .renderer
         .write()
@@ -448,8 +464,8 @@ pub fn init_object_view<'a>(cc: &'a eframe::CreationContext<'a>, object: Arc<RwL
             vertex_buffer,
             index_buffer,
             depth_texture,
-            size: [0,0],
-    });
+            size: [0, 0],
+        });
 
     Some(())
 }
@@ -464,46 +480,51 @@ impl From<STL> for Object {
     fn from(value: STL) -> Self {
         let mut verticies: Vec<Vertex> = Vec::new();
         let mut indicies: Vec<u16> = Vec::new();
-        
+
         let mut rng = rand::rng();
-        
+
         for tri in value.triangles {
             for point in tri.points {
                 let index = match verticies.iter().position(|x| x.position == point) {
                     None => {
-                        verticies.push( Vertex { 
-                            position: (point), 
-                            color: ([rng.random(),rng.random(),rng.random()]) 
+                        verticies.push(Vertex {
+                            position: (point),
+                            color: ([rng.random(), rng.random(), rng.random()]),
                         });
-                       verticies.len()-1 
+                        verticies.len() - 1
                     }
-                    Some(index) => {
-                        index
-                    }
+                    Some(index) => index,
                 };
-                
+
                 indicies.push(index as u16);
             }
         }
-        
-        Object { verticies, indicies }
+
+        Object {
+            verticies,
+            indicies,
+        }
     }
 }
 
 impl From<Mesh> for Object {
     fn from(value: Mesh) -> Self {
-        
         let mut rng = rand::rng();
-        
-        let verticies: Vec<Vertex> = value.vertices.iter().map(|v| 
-            Vertex{
-                position: [v.x as f32,v.y as f32, v.z as f32], 
-                color: ([rng.random(),rng.random(),rng.random()]) 
-            }
-        ).collect();
+
+        let verticies: Vec<Vertex> = value
+            .vertices
+            .iter()
+            .map(|v| Vertex {
+                position: [v.x as f32, v.y as f32, v.z as f32],
+                color: ([rng.random(), rng.random(), rng.random()]),
+            })
+            .collect();
         let indicies: Vec<u16> = value.indices.iter().map(|i| *i as u16).collect();
-        
-        Object { verticies, indicies }
+
+        Object {
+            verticies,
+            indicies,
+        }
     }
 }
 
@@ -518,11 +539,7 @@ impl Texture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
     #[allow(unused)]
-    pub fn create_depth_texture(
-        device: &wgpu::Device,
-        size: [u32; 2],
-        label: &str,
-    ) -> Self {
+    pub fn create_depth_texture(device: &wgpu::Device, size: [u32; 2], label: &str) -> Self {
         let size = wgpu::Extent3d {
             width: size[0].max(1),
             height: size[1].max(1),

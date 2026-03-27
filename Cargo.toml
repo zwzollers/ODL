@@ -1,5 +1,5 @@
 [package]
-name = "ODL"
+name = "odl"
 version = "0.1.0"
 authors = ["Zane Zollers"]
 edition = "2024"
@@ -61,3 +61,4 @@ opencascade = {git = "https://github.com/bschwind/opencascade-rs"}
 [features]
 default = ["builtin"]
 builtin = ["opencascade/builtin"]
+wgpu = []

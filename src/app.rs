@@ -1,12 +1,11 @@
-use std::{f32, sync::{Arc, RwLock}};
+use std::{
+    f32,
+    sync::{Arc, RwLock},
+};
 
-use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, Label, Margin, Rect, Stroke, StrokeKind, Style, TextBuffer, TextStyle, Vec2};
+use egui::{Color32, FontFamily, FontId, Label, Margin, Stroke};
 
 use super::render::*;
-
-use super::stl::*;
-
-use super::tokenizer::*;
 
 use super::cascade::*;
 
@@ -16,28 +15,30 @@ use super::cascade::*;
 pub struct App {
     // Example stuff:
     label: String,
-    
+
     text_width: f32,
 
     #[serde(skip)] // This how you opt-out of serialization of a field
     value: f32,
 
-    #[serde(skip)] // This how you opt-out of serialization of a field
+    #[serde(skip)]
     object_view: ObjectView,
 
-    #[serde(skip)] // This how you opt-out of serialization of a field
+    #[serde(skip)]
     pub object: Arc<RwLock<Object>>,
 
-    #[serde(skip)] // This how you opt-out of serialization of a field
-    pub camera:Camera,
+    #[serde(skip)]
+    pub object_changed: bool,
 
-    #[serde(skip)] // This how you opt-out of serialization of a field
+    #[serde(skip)]
+    pub camera: Camera,
+
+    #[serde(skip)]
     pub camera_controller: CameraController,
 }
 
 impl Default for App {
     fn default() -> Self {
-
         let camera = Camera {
             // position the camera 1 unit up and 2 units back
             // +z is out of the screen
@@ -61,7 +62,8 @@ impl Default for App {
             value: 2.7,
             object_view: ObjectView::default(),
             //object: Arc::new(RwLock::new(Object::from(STL::try_from_bytes(include_bytes!("../test_stl/test.stl")).unwrap()))),
-            object: Arc::new(RwLock::new(Object::from(test_cascade()))),
+            object: Arc::new(RwLock::new(Object::default())),
+            object_changed: true,
             camera,
             camera_controller,
         }
@@ -71,17 +73,15 @@ impl Default for App {
 impl App {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-
-        let app = App::default();
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
-        init_object_view(cc, Arc::clone(&app.object));
+        init_object_view(cc);
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         if let Some(storage) = cc.storage {
             eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
         } else {
-            Default::default()
+            App::default()
         }
     }
 }
@@ -94,17 +94,28 @@ impl eframe::App for App {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-
         let width = ctx.content_rect().width();
-        
+
         egui::SidePanel::right("obj_view")
-            .default_width(width/2.0)
+            .default_width(width / 2.0)
             .resizable(true)
             .max_width(width - 200.0)
             .show(ctx, |ui| {
-            //self.text_width = ui.available_width();
-            render_object_view(self, ui);
-        });
+                //self.text_width = ui.available_width();
+                render_object_view(self, ui, self.object_changed);
+            });
+
+        if self.object_changed {
+            {
+                let mut obj = self.object.write().unwrap();
+
+                *obj = Object::from(test_cascade());
+
+                println!("{}", obj.indicies.len());
+            }
+        }
+
+        self.object_changed = false;
 
         // egui::SidePanel::left("file_explorer")
         //     .default_width(width/2.0)
@@ -114,25 +125,29 @@ impl eframe::App for App {
         //     //self.text_width = ui.available_width();
         //     render_object_view(self, ui);
         // });
-        
+
         let mut layouter = |ui: &egui::Ui, string: &dyn egui::TextBuffer, _wrap_width: f32| {
-            let mut layout_job =  egui::text::LayoutJob::default();
-            layout_job.append(string.as_str(), 0.0, egui::TextFormat {
-                font_id: FontId::new(25.0, FontFamily::Monospace),
-                ..Default::default()
-            });
+            let mut layout_job = egui::text::LayoutJob::default();
+            layout_job.append(
+                string.as_str(),
+                0.0,
+                egui::TextFormat {
+                    font_id: FontId::new(25.0, FontFamily::Monospace),
+                    ..Default::default()
+                },
+            );
             ui.fonts_mut(|f| f.layout_job(layout_job))
         };
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ctx, |_ui| {
             //egui::widgets::global_theme_preference_buttons(ui);
 
             egui::TopBottomPanel::bottom("terminal")
                 .resizable(true)
                 .show(ctx, |ui| {
                     ui.add(Label::new("HELLO"));
-            });
-            
+                });
+
             //println!("{:#?}", Tokens::try_from(self.label.as_str()));
 
             egui::CentralPanel::default().show(ctx, |ui| {
@@ -141,23 +156,23 @@ impl eframe::App for App {
                     .corner_radius(3.0)
                     .inner_margin(Margin::symmetric(0, 0))
                     .show(ui, |ui| {
-
                         let mut scroll_style = egui::style::ScrollStyle::solid();
                         scroll_style.foreground_color = false;
-                        
+
                         ui.style_mut().spacing.scroll = scroll_style;
-                        egui::ScrollArea::both().auto_shrink([false; 2])
+                        egui::ScrollArea::both()
+                            .auto_shrink([false; 2])
                             .show(ui, |ui| {
-                            ui.add(
-                                egui::TextEdit::multiline(&mut self.label)
-                                    .layouter(&mut layouter)
-                                    .frame(false)
-                                    .desired_width(f32::INFINITY)
-                                    .code_editor()  
-                            );
-                        });
-                });
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.label)
+                                        .layouter(&mut layouter)
+                                        .frame(false)
+                                        .desired_width(f32::INFINITY)
+                                        .code_editor(),
+                                );
+                            });
+                    });
             });
-        });   
+        });
     }
 }
