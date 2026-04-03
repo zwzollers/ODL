@@ -12,3 +12,6 @@ pub use tokenizer::*;
 
 pub mod cascade;
 pub use cascade::*;
+
+pub mod text_edit_diff;
+pub use text_edit_diff::*;

@@ -9,6 +9,8 @@ use super::render::*;
 
 use super::cascade::*;
 
+use super::stl::*;
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -50,7 +52,7 @@ impl Default for App {
             aspect: 1.0,
             fovy: 45.0,
             znear: 0.1,
-            zfar: 100.0,
+            zfar: 1000.0,
         };
 
         let camera_controller = CameraController::new(0.02, 0.001, 0.1);
@@ -61,8 +63,8 @@ impl Default for App {
             text_width: 0.0,
             value: 2.7,
             object_view: ObjectView::default(),
-            //object: Arc::new(RwLock::new(Object::from(STL::try_from_bytes(include_bytes!("../test_stl/test.stl")).unwrap()))),
-            object: Arc::new(RwLock::new(Object::default())),
+            object: Arc::new(RwLock::new(Object::from(STL::try_from_bytes(include_bytes!("../test_stl/crab.stl")).unwrap()))),
+            //object: Arc::new(RwLock::new(Object::default())),
             object_changed: true,
             camera,
             camera_controller,
@@ -109,7 +111,7 @@ impl eframe::App for App {
             {
                 let mut obj = self.object.write().unwrap();
 
-                *obj = Object::from(test_cascade());
+                //*obj = Object::from(test_cascade());
 
                 println!("{}", obj.indicies.len());
             }
@@ -163,7 +165,7 @@ impl eframe::App for App {
                         egui::ScrollArea::both()
                             .auto_shrink([false; 2])
                             .show(ui, |ui| {
-                                ui.add(
+                                let text_resp = ui.add(
                                     egui::TextEdit::multiline(&mut self.label)
                                         .layouter(&mut layouter)
                                         .frame(false)

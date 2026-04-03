@@ -129,7 +129,7 @@ impl CameraController {
     pub fn handle_mouse_click(&mut self, code: PointerButton, is_pressed: bool) {
         self.clear_clicked();
         match code {
-            PointerButton::Middle => {
+            PointerButton::Secondary => {
                 self.is_rotating = is_pressed;
                 self.mouse_offset = (0.0, 0.0);
             }
@@ -498,6 +498,10 @@ impl From<STL> for Object {
 
                 indicies.push(index as u16);
             }
+        }
+        
+        if indicies.len() % 2 != 0 {
+            indicies.push(0);
         }
 
         Object {
