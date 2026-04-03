@@ -14,6 +14,10 @@
         pkgs = import nixpkgs { inherit system overlays; };
       in with pkgs; {
         devShells.default = mkShell rec {
+          nativeBuildInputs = [
+            mold 
+            clang
+          ];
           buildInputs = [
             # Rust
             (rust-bin.stable.latest.default.override {
@@ -48,6 +52,7 @@
             CMAKE_POLICY_VERSION_MINIMUM="3.5";
           };
 
+          RUSTFLAGS = "-Clink-arg=-fuse-ld=${pkgs.mold}/bin/mold";
           LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
         };
       });
