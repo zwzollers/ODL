@@ -1,0 +1,295 @@
+use std::str::FromStr;
+use lalrpop_util::ErrorRecovery;
+use crate::ast::{AST, Declaration, Assignment, Scope, Export, Term, Statement, Module, Port, PortDir, If, For, While, ModuleInst, PortInst, Expr, Struct, StructItem, Enum, TopStructre};
+
+grammar<'err>(errors: &'err mut Vec<ErrorRecovery<usize, Token<'input>, &'static str>>); 
+
+match {
+    // comments
+    r"\/\/.*\n?" => {}, 
+    r"\/\*[^*]*\\*+(?:[^\*][^*]*\\*+)\*\/" => {},
+} else {
+    "mod"                       => MOD,
+    "("                         => OPEN_PAREN,
+    ")"                         => CLOSE_PAREN,
+    "{"                         => OPEN_BRACE,
+    "}"                         => CLOSE_BRACE,
+    "["                         => OPEN_BRACKET,
+    "]"                         => CLOSE_BRACKET,
+    ":"                         => COLON,
+    "->"                        => ARROW,
+    "="                         => EQUAL,
+    ","                         => COMMA,
+    ";"                         => SEMICOLON,
+    "=="                        => LOGIC_EQ,
+    "!="                        => LOGIC_NE,  
+    ">"                         => LOGIC_G,
+    "<"                         => LOGIC_L,
+    ">="                        => LOGIC_GE,
+    "<="                        => LOGIC_LE,
+    "&&"                        => LOGIC_AND,
+    "||"                        => LOGIC_OR,  
+    "+"                         => PLUS,
+    "-"                         => DASH,
+    "*"                         => WILD,
+    "/"                         => FWD_SLASH,
+    "%"                         => PRECENT,              
+    "in"                        => IN,
+    "out"                       => OUT,
+    "if"                        => IF,
+    "elif"                      => ELIF,
+    "else"                      => ELSE,
+    "for"                       => FOR,
+    "while"                     => WHILE,
+    "let"                       => LET,
+    "struct"                    => STRUCT,
+    "enum"                      => ENUM,
+    r"_?[a-zA-Z][a-zA-Z_0-9]*"  => IDENT,
+    r"[0-9_]+\.?[0-9_]*"        => NUM,
+    r#""[\s\S]*""#              => STRING
+} else {
+    // ignore whitespace
+    r"\s" => {},
+    _
+}
+
+//----------------------------------------------------------------------------------------------
+//                                          HEIRARCHY
+//----------------------------------------------------------------------------------------------
+
+// top level syntax heirarchy 
+pub AST: Box<AST> = {
+    (<TopStructre>)* => 
+        Box::new(AST{items: <>})
+};
+
+TopStructre: TopStructre = {
+    Module => TopStructre::Module(<>),
+    Struct => TopStructre::Struct(<>),
+    Enum => TopStructre::Enum(<>),
+}
+
+// module definition syntax 
+Module: Box<Module> = {
+    MOD <Ident> OPEN_PAREN <CommaList<Port>> CLOSE_PAREN OPEN_BRACE <( <Statement> )*> CLOSE_BRACE =>
+        Box::new(Module{name: <>, port_list: <>, statements: <>})
+};
+// single module port syntax
+Port: Box<Port> = {
+    <Ident> COLON <PortDir> <Ident> => 
+        Box::new(Port{name: <>, dir: <>, ty: <>})
+};
+// port direction (in, out)
+PortDir: PortDir = {
+    IN  => PortDir::In,
+    OUT => PortDir::Out,
+};
+
+// scope and export list syntax
+Scope: Box<Scope> = {
+    OPEN_BRACE <( <Statement> )*> CLOSE_BRACE ARROW OPEN_PAREN <CommaList<Export>> CLOSE_PAREN =>
+        Box::new(Scope{statements: <>, exports: <>})
+};
+// single export used in scopes 
+Export: Box<Export> = {
+    <Ident> COLON <Expr> => 
+        Box::new(Export{ident: <>, value: <>})
+};
+
+
+//----------------------------------------------------------------------------------------------
+//                                       CONTROL FLOW
+//----------------------------------------------------------------------------------------------
+
+// every valid statment within a scope
+Statement: Statement = {
+    Scope => Statement::Scope(<>),
+    Declaration => Statement::Declaration(<>),
+    Assignment => Statement::Assignment(<>),
+    If => Statement::If(<>),
+    For => Statement::For(<>),
+    While => Statement::While(<>),
+    ! => { errors.push(<>); Statement::Error },
+};
+
+// main control flow syntax (if, elif, else) else is required
+If: Box<If> = {
+    IF <fc:Expr> <fs:Scope> <elif:(ELIF <(Expr Scope)>)*> ELSE <ls:Scope> => {
+        let (c, s) : (Vec<Box<Expr>>, Vec<Box<Scope>>) = elif.into_iter().unzip();
+        let mut conds = vec![fc];
+        conds.extend(c);
+
+        let mut scopes = vec![fs];
+        scopes.extend(s);
+        scopes.push(ls);
+
+        Box::new(If{
+            condition_list: conds,
+            scope_list: scopes,
+        })
+    } 
+};
+
+// foreach loop syntax 
+For: Box<For> = {
+    FOR <Ident> IN <Expr> <Scope> => {
+        Box::new(For{iter_idx: <>, iter: <>, scope: <>})
+    }
+};
+
+// while loop syntax
+While: Box<While> = {
+    WHILE <Expr> <Scope> => {
+        Box::new(While{cond: <>, scope: <>})
+    }
+};
+
+// module instantiation syntax
+ModuleInst: Box<ModuleInst> = {
+    <Ident> OPEN_PAREN <CommaList<PortInst>> CLOSE_BRACE SEMICOLON => {
+        Box::new(ModuleInst{module: <>, port_inst: <>})
+    }
+};
+// port syntax used in module instantiation
+PortInst: Box<PortInst> = {
+    <Ident> COLON <Expr> => 
+        Box::new(PortInst{ident: <>, value: <>})
+};
+
+
+//----------------------------------------------------------------------------------------------
+//                                          VARIABLES
+//----------------------------------------------------------------------------------------------
+
+// declaring and assigning a new variable
+Declaration: Box<Declaration> = {
+    LET <Assignment> => 
+        Box::new(Declaration{assignment: <>})
+};
+
+// assigning a expression to a variable only used when assigning the output of a module
+Assignment: Box<Assignment> = {
+    <Ident> EQUAL <Expr> SEMICOLON => 
+        Box::new(Assignment{ident: <>, expr: <>})
+};
+
+//----------------------------------------------------------------------------------------------
+//                                          EXPRESSIONS
+//----------------------------------------------------------------------------------------------
+
+// all expression syntax
+Expr: Box<Expr> = {
+    #[precedence(level="0")]
+    <Term> => 
+        {Box::new(Expr::Term(<>))},
+
+    OPEN_PAREN <ExprReset> CLOSE_PAREN,
+
+    #[precedence(level="1")] #[assoc(side="left")]
+    <Expr> WILD <Expr> => 
+        {Box::new(Expr::Mul(<>))},
+    <Expr> FWD_SLASH <Expr> => 
+        {Box::new(Expr::Div(<>))},
+
+    #[precedence(level="2")] #[assoc(side="left")]
+    <Expr> PLUS <Expr> => 
+        {Box::new(Expr::Add(<>))},
+    <Expr> DASH <Expr> => 
+        {Box::new(Expr::Sub(<>))},
+
+    #[precedence(level="3")] #[assoc(side="left")]
+    <Expr> LOGIC_EQ <Expr> => 
+        {Box::new(Expr::Equal(<>))},
+    <Expr> LOGIC_NE <Expr> => 
+        {Box::new(Expr::NotEqual(<>))},
+    <Expr> LOGIC_G <Expr> => 
+        {Box::new(Expr::Less(<>))},
+    <Expr> LOGIC_L <Expr> => 
+        {Box::new(Expr::Greater(<>))},
+    <Expr> LOGIC_GE <Expr> => 
+        {Box::new(Expr::LessEqual(<>))},
+    <Expr> LOGIC_LE <Expr> => 
+        {Box::new(Expr::GreaterEqual(<>))},
+
+    #[precedence(level="4")] #[assoc(side="left")]
+    <Expr> LOGIC_AND <Expr> => 
+        {Box::new(Expr::Add(<>))},
+
+    #[precedence(level="5")] #[assoc(side="left")]
+    <Expr> LOGIC_OR <Expr> => 
+        {Box::new(Expr::Add(<>))},  
+};
+
+// literals and variable names
+Term: Term = {
+    <Num> => Term::Num(<>),
+    <Ident> => Term::Ident(<>),
+    <String> => Term::String(<>),
+    <List>  => Term::List(<>),
+};
+
+// number literal
+Num: f64 = {
+    NUM => 
+        f64::from_str(&String::from(<>).replace("_","")).unwrap()
+};
+
+// variable identifier
+Ident: String = {
+    IDENT => 
+        String::from(<>)
+};
+
+// string literal
+String: String = {
+    <s:STRING> => {
+        let mut s = s.chars();
+        s.next();
+        s.next_back();
+        String::from(s.as_str())
+    }
+};
+
+// list literal
+List: Vec<Box<Expr>> = {
+    OPEN_BRACKET <CommaList<Expr>> CLOSE_BRACKET
+};
+
+
+// idk why you need this. All hail github issue comments https://github.com/lalrpop/lalrpop/issues/596#issuecomment-817259049
+ExprReset = <Expr>;
+
+//----------------------------------------------------------------------------------------------
+//                                           TYPES
+//----------------------------------------------------------------------------------------------
+
+// struct definition syntax
+Struct: Box<Struct> = {
+    STRUCT <Ident> OPEN_BRACE <CommaList<StructItem>> CLOSE_BRACE =>
+        Box::new(Struct{name: <>, items: <>})
+};
+//struct item syntax
+StructItem: Box<StructItem> = {
+    <Ident> COLON <Ident> => 
+        Box::new(StructItem{name: <>, ty: <>})
+};
+
+Enum: Box<Enum> = {
+    ENUM <Ident> OPEN_BRACE <CommaList<Ident>> CLOSE_BRACE =>
+        Box::new(Enum{name: <>, items: <>})
+}
+
+//----------------------------------------------------------------------------------------------
+//                                     LALRPOP GENERICS
+//----------------------------------------------------------------------------------------------
+
+// generic comma deliminated list with optional trailing comma
+CommaList<T>: Vec<T> = {
+    <mut v:(<T> COMMA)*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            v.push(e);
+            v
+        }
+    }
+};

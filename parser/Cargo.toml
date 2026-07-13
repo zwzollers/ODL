@@ -1,0 +1,11 @@
+[package]
+name = "parser"
+version = "0.1.0"
+edition = "2024"
+
+[build-dependencies]
+lalrpop = "0.23.1"
+
+[dependencies]
+lalrpop-util = { version = "0.23.1", features = ["lexer", "unicode"] }
+petgraph = "0.8.3"
