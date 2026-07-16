@@ -1,4 +1,4 @@
-use parser::{syntax, runtime_graph};
+use parser::{syntax, runtime::Runtime};
 use petgraph::graph::DiGraph;
 
 fn main() {
@@ -28,15 +28,4 @@ fn main() {
 
     println!("{expr:#?}, {errors:#?}");
 
-
-    let mut g = DiGraph::<String, ()>::new();
-
-    let n0 = g.add_node("Code".into());
-    let n1 = g.add_node("Code".into());
-
-    g.add_edge(n0, n1, ());
-
-    let c: i32 = 6;
-
-    println!("{g:?}");
 }

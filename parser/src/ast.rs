@@ -62,7 +62,7 @@ pub struct Scope {
 
 #[derive(Debug)]
 pub struct Assignment {
-    pub ident: String,
+    pub name: String,
     pub expr: Box<Expr>,
 }
 

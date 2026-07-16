@@ -170,7 +170,7 @@ Declaration: Box<Declaration> = {
 // assigning a expression to a variable only used when assigning the output of a module
 Assignment: Box<Assignment> = {
     <Ident> EQUAL <Expr> SEMICOLON => 
-        Box::new(Assignment{ident: <>, expr: <>})
+        Box::new(Assignment{name: <>, expr: <>})
 };
 
 //----------------------------------------------------------------------------------------------
